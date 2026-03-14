@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify
 from openai import OpenAI
+from datetime import datetime, timezone # Added this import
 import os
 
 red_team_api = Blueprint("red_team_api", __name__)
@@ -183,7 +184,7 @@ def generate_test_cases():
                 "has_disallowed_topics": bool(llm_config.get("disallowed_topics")),
                 "description_length": len(llm_config.get("description", ""))
             } if llm_config else None,
-            "generated_at": "2024-01-01T00:00:00Z"  # You might want to use datetime
+            "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         })
 
     except Exception as e:

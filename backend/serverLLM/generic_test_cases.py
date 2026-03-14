@@ -6,6 +6,8 @@ regardless of its specific configuration or personality. These serve as
 baseline tests for the five vulnerability categories.
 """
 
+from datetime import datetime, timezone
+
 GENERIC_TEST_CASES = {
     "Sycophancy Check": [
         {
@@ -169,6 +171,33 @@ def get_test_case_count():
         dict: Dictionary with category names as keys and test case counts as values.
     """
     return {category: len(cases) for category, cases in GENERIC_TEST_CASES.items()}
+
+
+def generate_test_cases(category, llm_config=None):
+    """Generate a structured test case payload similar to the Flask endpoint.
+
+    Args:
+        category (str): The category of test cases to retrieve.
+        llm_config (dict, optional): Optional LLM configuration that influences the response.
+
+    Returns:
+        dict: Payload matching the Flask jsonify structure used by redTeamLLM.
+    """
+    test_cases = get_generic_test_cases(category)
+
+    return {
+        "category": category,
+        "test_cases": test_cases,
+        "llm_config_used": bool(llm_config),
+        "llm_config_summary": {
+            "personality_statement": llm_config.get("personality_statement", ""),
+            "has_system_prompts": bool(llm_config.get("system_prompts")),
+            "has_disallowed_topics": bool(llm_config.get("disallowed_topics")),
+            "description_length": len(llm_config.get("description", ""))
+        } if llm_config else None,
+        "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    }
+
 
 if __name__ == "__main__":
     # Example usage

@@ -1,7 +1,7 @@
 const BASE_URL = import.meta.env.VITE_LOCAL_SERVER_ROUTE;
+import type { LLMConfig } from "../types/types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
 export interface SSEOptions {
   onMessage: (data: string) => void;
   onError?: (error: Event) => void;
@@ -11,137 +11,79 @@ export interface SSEOptions {
   withCredentials?: boolean;
 }
 
-export interface RequestOptions {
-  method?: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
-  body?: unknown;
-  headers?: Record<string, string>;
-}
-
-export interface ApiResponse<T = unknown> {
-  data: T | null;
-  error: string | null;
-  status: number;
-}
-
-// ─── SSE ─────────────────────────────────────────────────────────────────────
-
 /**
- * Opens an SSE connection to the given endpoint.
- * Returns a cleanup function to close the connection.
- *
- * @example
- * const close = connectSSE("/stream", {
- *   onMessage: (data) => console.log(data),
- *   onError: (e) => console.error(e),
- * });
- *
- * // Later, to close:
- * close();
+ * Establishes connection with SSE server. This was send back data contiously.
  */
-export function connectSSE(endpoint: string, options: SSEOptions): () => void {
-  const {
-    onMessage,
-    onError,
-    onOpen,
-    onClose,
-    eventType = "message",
-    withCredentials = false,
-  } = options;
+export async function connectSSE(
+  config: LLMConfig,
+  options: SSEOptions,
+): Promise<() => void> {
+  const { onMessage, onError, onOpen, onClose } = options;
 
-  const url = `${BASE_URL}${endpoint}`;
-  const source = new EventSource(url, { withCredentials });
-
-  source.onopen = () => {
-    onOpen?.();
-  };
-
-  // Named event listener (e.g. event: update)
-  source.addEventListener(eventType, (event: MessageEvent) => {
-    try {
-      const parsed = tryParseJSON(event.data);
-      onMessage(parsed ?? event.data);
-    } catch {
-      onMessage(event.data);
-    }
-  });
-
-  // Fallback for unnamed "message" events when eventType is custom
-  if (eventType !== "message") {
-    source.onmessage = (event: MessageEvent) => {
-      try {
-        const parsed = tryParseJSON(event.data);
-        onMessage(parsed ?? event.data);
-      } catch {
-        onMessage(event.data);
-      }
-    };
-  }
-
-  source.onerror = (error: Event) => {
-    onError?.(error);
-
-    // If the server closed the stream, readyState becomes CLOSED
-    if (source.readyState === EventSource.CLOSED) {
-      onClose?.();
-    }
-  };
-
-  // Return cleanup function
-  return () => {
-    source.close();
-    onClose?.();
-  };
-}
-
-// ─── Regular HTTP requests ────────────────────────────────────────────────────
-
-/**
- * Generic fetch wrapper for standard JSON requests.
- *
- * @example
- * const { data, error } = await request<{ message: string }>("/api/hello");
- */
-export async function request<T = unknown>(
-  endpoint: string,
-  options: RequestOptions = {},
-): Promise<ApiResponse<T>> {
-  const { method = "GET", body, headers = {} } = options;
+  const controller = new AbortController();
 
   try {
-    const response = await fetch(`${BASE_URL}${endpoint}`, {
-      method,
+    const response = await fetch(BASE_URL + "/stream", {
+      method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...headers,
+        Accept: "text/event-stream",
       },
-      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+      body: JSON.stringify({
+        behavior: config.personality_statement,
+        description: config.description,
+        system_prompts: config.system_prompts,
+        disallowed_topics: config.disallowed_topics,
+        llm_link: config.llm_link,
+      }),
     });
 
-    const data: T = await response.json();
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
 
-    return {
-      data,
-      error: null,
-      status: response.status,
-    };
+    onOpen?.();
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+
+    if (!reader) throw new Error("No response body");
+
+    // Read stream chunks
+    (async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+
+          // Parse SSE format: each line is "data: <payload>"
+          const lines = chunk.split("\n");
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const data = line.slice(6).trim();
+              if (data && data !== "[DONE]") {
+                onMessage(data);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        if ((err as Error).name !== "AbortError") {
+          onError?.(err.message);
+        }
+      } finally {
+        onClose?.();
+      }
+    })();
   } catch (err) {
-    return {
-      data: null,
-      error: err instanceof Error ? err.message : "Unknown error",
-      status: 0,
-    };
+    onError?.(err);
   }
-}
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * Safely parses a JSON string. Returns null if parsing fails.
- */
-function tryParseJSON<T = unknown>(value: string): T | null {
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return null;
-  }
+  // Return cleanup / disconnect function
+  return () => {
+    controller.abort();
+  };
 }

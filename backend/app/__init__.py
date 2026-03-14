@@ -1,10 +1,7 @@
 from flask import Flask
 from flask_cors import CORS
 from .routes import api
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from serverLLM.redTeamLLM import red_team_api
+from serverLLM.redTeamLLM_api import red_team_api
 from serverLLM.evaluatorLLM import evaluator_api
 
 def create_app():

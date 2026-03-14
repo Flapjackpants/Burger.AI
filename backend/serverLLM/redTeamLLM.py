@@ -40,10 +40,9 @@ def generate_test_cases(category, num_cases=5, llm_config=None):
     """
     if not category:
         raise ValueError("Category is required")
-
+    
     if category not in CATEGORY_PROMPTS:
         raise ValueError(f"Invalid category. Available categories: {list(CATEGORY_PROMPTS.keys())}")
-
     if llm_config:
         is_valid, error_msg = validate_llm_config(llm_config)
         if not is_valid:
@@ -94,14 +93,7 @@ def generate_test_cases(category, num_cases=5, llm_config=None):
 
     return {
         "category": category,
-        "test_cases": test_cases,
-        "llm_config_used": bool(llm_config),
-        "llm_config_summary": {
-            "personality_statement": llm_config.get("personality_statement", ""),
-            "has_system_prompts": bool(llm_config.get("system_prompts")),
-            "has_disallowed_topics": bool(llm_config.get("disallowed_topics")),
-            "description_length": len(llm_config.get("description", ""))
-        } if llm_config else None,
+        "test_cases": prompt_list,
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     }
 

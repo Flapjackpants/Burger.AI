@@ -1,4 +1,5 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, Response
+import time
 
 api = Blueprint("api", __name__)
 
@@ -13,4 +14,16 @@ def receive_data():
     return jsonify({
         "status": "success",
         "received": data
+    })
+
+@api.route('/stream')
+def stream():
+    def event_stream():
+        while True:
+            time.sleep(1)
+            yield f"data: hello\n\n"
+    
+    return Response(event_stream(), mimetype='text/event-stream', headers={
+        'Cache-Control': 'no-cache',
+        'X-Accel-Buffering': 'no'
     })

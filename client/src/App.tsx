@@ -1,120 +1,92 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import viteLogo from "./assets/vite.svg";
-import heroImg from "./assets/hero.png";
-import "./App.css";
+import { useState, useEffect, useRef } from "react";
+import { connectSSE } from "./router/processor"; // your connectSSE function
+import type { LLMConfig } from "./types/types";
+
+const config: LLMConfig = {
+  personality_statement: "You are a helpful assistant",
+  description: "A test chatbot",
+  system_prompts: [],
+  disallowed_topics: [],
+  llm_link: "https://your-llm-endpoint.com",
+};
 
 function App() {
-  const [count, setCount] = useState(0);
+  const [output, setOutput] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [sessionId, setSessionId] = useState(0);
+  const outputRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (sessionId === 0) return; // don't run on initial mount
+
+    let disconnect: (() => void) | null = null;
+
+    const start = async () => {
+      setIsStreaming(true);
+      setOutput("");
+
+      disconnect = await connectSSE(config, {
+        onMessage: (chunk) => {
+          setOutput((prev) => prev + chunk);
+          // auto scroll to bottom as chunks arrive
+          outputRef.current?.scrollTo(0, outputRef.current.scrollHeight);
+        },
+        onOpen: () => console.log("stream opened"),
+        onClose: () => setIsStreaming(false),
+        onError: (err) => {
+          console.error(err);
+          setIsStreaming(false);
+        },
+      });
+    };
+
+    start();
+
+    return () => {
+      disconnect?.();
+    };
+  }, [sessionId]);
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
+    <div style={{ maxWidth: 720, margin: "0 auto", padding: "2rem" }}>
+      <h1>Stream Tester</h1>
+
+      {/* Output box */}
+      <div
+        ref={outputRef}
+        style={{
+          border: "1px solid #ccc",
+          borderRadius: 8,
+          padding: "1rem",
+          minHeight: 200,
+          maxHeight: 500,
+          overflowY: "auto",
+          whiteSpace: "pre-wrap",
+          fontFamily: "monospace",
+          marginBottom: "1rem",
+          background: "#f9f9f9",
+        }}
+      >
+        {output || (
+          <span style={{ color: "#aaa" }}>Output will appear here...</span>
+        )}
+        {isStreaming && <span className="cursor">▋</span>}
+      </div>
+
+      {/* Controls */}
+      <div style={{ display: "flex", gap: "1rem" }}>
         <button
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
+          onClick={() => setSessionId((prev) => prev + 1)}
+          disabled={isStreaming}
         >
-          Count is {count}
+          {isStreaming ? "Streaming..." : "Start Stream"}
         </button>
-      </section>
 
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+        {isStreaming && (
+          <button onClick={() => setSessionId((prev) => prev + 1)}>Stop</button>
+        )}
+      </div>
+    </div>
   );
 }
 

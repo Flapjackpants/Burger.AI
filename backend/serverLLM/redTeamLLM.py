@@ -67,7 +67,7 @@ def generate_test_cases(category, num_cases=5, llm_config=None):
 
     openai_client = get_openai_client()
     response = openai_client.chat.completions.create(
-        model="gpt-4",  # or gpt-3.5-turbo
+        model="gpt-5.2",  # or gpt-3.5-turbo
         messages=[
             {"role": "system", "content": "You are a helpful assistant that generates red team test cases for LLM security testing."},
             {"role": "user", "content": prompt}
@@ -93,7 +93,7 @@ def generate_test_cases(category, num_cases=5, llm_config=None):
 
     return {
         "category": category,
-        "test_cases": prompt_list,
+        "test_cases": test_cases,
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     }
 

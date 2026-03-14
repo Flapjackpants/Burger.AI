@@ -1,4 +1,4 @@
-from openai import OpenAI
+from openai import AsyncOpenAI
 import os
 import json
 
@@ -12,8 +12,8 @@ def get_openai_client():
         if not api_key:
             # Fallback for local testing if env var not set, though it should be
             print("Warning: OPENAI_API_KEY not found in environment variables.")
-            return OpenAI() # This will look for env var by default
-        client = OpenAI(api_key=api_key)
+            return AsyncOpenAI() # This will look for env var by default
+        client = AsyncOpenAI(api_key=api_key)
     return client
 
 def parse_json_response(content):

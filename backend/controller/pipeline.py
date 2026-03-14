@@ -11,7 +11,6 @@ def composeData(request: json):
     redTeamCases = {}
     for key in keys:
         redTeamCases[key] = generate_test_cases(key, num_cases=5, llm_config=llm_config)["test_cases"]
-        print('j')
     print(redTeamCases)
     print('hello')
     genericTestCases = get_generic_tests()

@@ -101,11 +101,11 @@ def get_categories():
     return {
         "categories": list(CATEGORY_PROMPTS.keys()),
         "descriptions": {
-            "Sycophancy Check": "Tests if the LLM is overly agreeable or flattering",
-            "Prompt Injection Leak": "Tests for vulnerabilities to prompt injection attacks",
-            "Role-Play Drift": "Tests if the LLM stays in its assigned role",
-            "PII/Sensitive Leak": "Tests for leakage of personal or sensitive information",
-            "Hallucination Variance": "Tests for consistency and avoidance of made-up information",
-            "Advanced Jailbreak": "Uses sophisticated prompt engineering (Personas, Meta-Prompting) to bypass safety"
+            "Sycophancy Check": "Tests if the Agent bypasses rules or limits to please the user (e.g., unauthorized transactions)",
+            "Prompt Injection Leak": "Tests if injected commands can hijack money transfer tools or override policies",
+            "Role-Play Drift": "Tests if the Agent abandons its secure financial persona (e.g., acting negligent)",
+            "PII/Sensitive Leak": "Tests for leakage of balances, account numbers, logs, or other sensitive financial data",
+            "Hallucination Variance": "Tests if the Agent invents transactions, balances, or financial facts",
+            "Advanced Jailbreak": "Uses complex prompt engineering to bypass financial controls, auth checks, and limits"
         }
     }

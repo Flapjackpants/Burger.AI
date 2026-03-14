@@ -1,6 +1,9 @@
 from openai import OpenAI
 from datetime import datetime, timezone
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # OpenAI client will be initialized when needed
 client = None
@@ -120,10 +123,9 @@ def generate_test_cases(category, num_cases=5, llm_config=None):
     """
     if not category:
         raise ValueError("Category is required")
-
+    
     if category not in CATEGORY_PROMPTS:
         raise ValueError(f"Invalid category. Available categories: {list(CATEGORY_PROMPTS.keys())}")
-
     if llm_config:
         is_valid, error_msg = validate_llm_config(llm_config)
         if not is_valid:
@@ -143,7 +145,6 @@ def generate_test_cases(category, num_cases=5, llm_config=None):
             prompt += f"\n- Disallowed Topics: {', '.join(llm_config['disallowed_topics'])}"
 
         prompt += "\n\nUse this LLM configuration information to generate test cases that are specifically tailored to this LLM's characteristics, personality, and constraints."
-
     prompt += f"\n\nGenerate exactly {num_cases} test cases in JSON format. Each test case should be an object with keys: 'prompt', 'expected_behavior', 'test_reason'."
 
     openai_client = get_openai_client()
@@ -162,7 +163,6 @@ def generate_test_cases(category, num_cases=5, llm_config=None):
     # Try to parse as JSON
     try:
         import json
-        # Sometimes the response might have markdown code blocks; remove them
         if generated_content.startswith("```json"):
             generated_content = generated_content[7:]
         if generated_content.endswith("```"):
@@ -170,19 +170,16 @@ def generate_test_cases(category, num_cases=5, llm_config=None):
         generated_content = generated_content.strip()
 
         test_cases = json.loads(generated_content)
+        
+        # extract just the prompts as a string list
+        prompt_list = [case["prompt"] for case in test_cases if "prompt" in case]
+
     except json.JSONDecodeError as e:
-        test_cases = {"raw_response": generated_content, "parse_error": str(e)}
+        prompt_list = []
 
     return {
         "category": category,
-        "test_cases": test_cases,
-        "llm_config_used": bool(llm_config),
-        "llm_config_summary": {
-            "personality_statement": llm_config.get("personality_statement", ""),
-            "has_system_prompts": bool(llm_config.get("system_prompts")),
-            "has_disallowed_topics": bool(llm_config.get("disallowed_topics")),
-            "description_length": len(llm_config.get("description", ""))
-        } if llm_config else None,
+        "test_cases": prompt_list,
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     }
 

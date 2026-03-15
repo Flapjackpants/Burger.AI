@@ -10,7 +10,7 @@ Guardrails (where they live):
 - System prompt: agents/payment_agent.py SYSTEM_PROMPT — when the LLM may call tools (soft guardrail).
 """
 import os
-from typing import Any
+from typing import Any, Dict, Optional
 
 # ---- Guardrails (edit these to tighten or loosen) ----
 PAYMENT_MIN_CENTS = 50
@@ -19,10 +19,10 @@ PAYMENT_REQUIRE_DESCRIPTION = True
 # In test mode (sk_test_ key), process_payment will auto-confirm with a test card so the payment lands. In live mode we only create the intent (no charge).
 
 # Ensure .env is loaded (agents.utils does this on import)
-def _get_stripe_key() -> str | None:
+def _get_stripe_key() -> Optional[str]:
     return os.getenv("STRIPE_SECRET_KEY")
 
-def _stripe_call(fn, *args, **kwargs) -> dict[str, Any]:
+def _stripe_call(fn, *args, **kwargs) -> Dict[str, Any]:
     """Run a Stripe API call; return {success, data or error}."""
     key = _get_stripe_key()
     if not key:
@@ -250,7 +250,7 @@ TOOLS = [
 
 # ---- Executors ----
 
-def execute_process_payment(amount: float, currency: str, description: str) -> dict[str, Any]:
+def execute_process_payment(amount: float, currency: str, description: str) -> Dict[str, Any]:
     """
     Process a payment (Stripe PaymentIntent). Guardrails: min/max amount, description required.
     In TEST mode (sk_test_): we create and confirm with a test card so the payment lands.
@@ -286,7 +286,7 @@ def execute_process_payment(amount: float, currency: str, description: str) -> d
         return {"success": False, "error": str(e)}
 
 
-def execute_add_test_balance(amount_dollars: float) -> dict[str, Any]:
+def execute_add_test_balance(amount_dollars: float) -> Dict[str, Any]:
     """
     Add test balance (same as python -m agents.add_real_test_balance).
     Creates and confirms a PaymentIntent with a test card. Test mode only.
@@ -318,7 +318,7 @@ def execute_add_test_balance(amount_dollars: float) -> dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def run_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+def run_tool(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     """Run a tool by name with given arguments."""
     args = arguments or {}
     if name == "process_payment":

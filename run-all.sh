@@ -8,6 +8,10 @@ set -e
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$REPO_ROOT"
 
+# Clear ports 5001 and 5002 so we can bind on startup (e.g. after a previous run or crash)
+lsof -ti:5001 | xargs kill -9 2>/dev/null || true
+lsof -ti:5002 | xargs kill -9 2>/dev/null || true
+
 BACKEND_PID=""
 AGENTS_PID=""
 
@@ -59,7 +63,7 @@ deactivate 2>/dev/null || true
 
 # --- Client (Node/Vite, install if needed) ---
 CLIENT_DIR="$REPO_ROOT/client"
-if [[ ! -d "$CLIENT_DIR/node_modules" ]]; then
+if [[ ! -d "$CLIENT_DIR/node_modules" ]] || [[ "$CLIENT_DIR/package.json" -nt "$CLIENT_DIR/node_modules" ]]; then
   echo "[run-all] Installing client dependencies (npm install)..."
   (cd "$CLIENT_DIR" && npm install)
 fi
@@ -69,9 +73,9 @@ echo "[run-all] Starting backend server (port 5001)..."
 (cd "$BACKEND_DIR" && source "$BACKEND_VENV/bin/activate" && python run.py) &
 BACKEND_PID=$!
 
-# --- Start agents endpoint in background ---
+# --- Start agents endpoint in background (port 5002 to match backend DEFAULT_LLM_LINK) ---
 echo "[run-all] Starting agents endpoint (port 5002)..."
-(cd "$REPO_ROOT" && source "$AGENTS_VENV/bin/activate" && python -m agents.agent_endpoint) &
+(cd "$REPO_ROOT" && source "$AGENTS_VENV/bin/activate" && AGENT_PORT=5002 python -m agents.agent_endpoint) &
 AGENTS_PID=$!
 
 # Give servers a moment to bind

@@ -2,7 +2,7 @@
 Payment agent: uses a fast LLM with tool-calling. Records every tool invocation
 so you can test efficacy, safety, and guardrails and see exactly when tools are called.
 """
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from .tools import TOOLS, run_tool
 from .utils import get_openai_client
@@ -25,12 +25,12 @@ All tools call Stripe directly; results match the Dashboard. Use the tool that m
 
 class ToolCallRecord:
     """Single record of a tool having been called (for testing and observability)."""
-    def __init__(self, tool_name: str, arguments: dict[str, Any], result: dict[str, Any]):
+    def __init__(self, tool_name: str, arguments: Dict[str, Any], result: Dict[str, Any]):
         self.tool_name = tool_name
         self.arguments = arguments
         self.result = result
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "tool_name": self.tool_name,
             "arguments": self.arguments,
@@ -44,10 +44,10 @@ class PaymentAgent:
     the final reply and .tool_calls_log to inspect every tool invocation (for
     efficacy, safety, and guardrail testing).
     """
-    def __init__(self, model: str | None = None):
+    def __init__(self, model: Optional[str] = None):
         self.model = model or DEFAULT_MODEL
         self._client = None
-        self.tool_calls_log: list[ToolCallRecord] = []
+        self.tool_calls_log: List[ToolCallRecord] = []
 
     @property
     def client(self):
@@ -55,7 +55,7 @@ class PaymentAgent:
             self._client = get_openai_client()
         return self._client
 
-    def run(self, user_id: str, user_message: str) -> dict[str, Any]:
+    def run(self, user_id: str, user_message: str) -> Dict[str, Any]:
         """
         Run the agent for one user turn. Returns {
             "reply": str,
@@ -104,7 +104,7 @@ class PaymentAgent:
         }
 
 
-def run_payment_agent(user_id: str, user_message: str, model: str | None = None) -> dict[str, Any]:
+def run_payment_agent(user_id: str, user_message: str, model: Optional[str] = None) -> Dict[str, Any]:
     """One-shot: run the payment agent and return reply + tool_calls_log."""
     agent = PaymentAgent(model=model)
     return agent.run(user_id=user_id, user_message=user_message)

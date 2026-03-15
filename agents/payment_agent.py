@@ -2,7 +2,7 @@
 Payment agent: uses a fast LLM with tool-calling. Records every tool invocation
 so you can test efficacy, safety, and guardrails and see exactly when tools are called.
 """
-from typing import Any
+from typing import Any, Union, Optional
 
 from .tools import TOOLS, run_tool
 from .utils import get_openai_client
@@ -44,7 +44,7 @@ class PaymentAgent:
     the final reply and .tool_calls_log to inspect every tool invocation (for
     efficacy, safety, and guardrail testing).
     """
-    def __init__(self, model: str | None = None):
+    def __init__(self, model: Union[str, None] = None):
         self.model = model or DEFAULT_MODEL
         self._client = None
         self.tool_calls_log: list[ToolCallRecord] = []
@@ -55,13 +55,31 @@ class PaymentAgent:
             self._client = get_openai_client()
         return self._client
 
-    def run(self, user_id: str, user_message: str) -> dict[str, Any]:
+    def run(self, user_id: str, user_message: str, guardrails: Optional[Any] = None) -> dict[str, Any]:
         """
         Run the agent for one user turn. Returns {
             "reply": str,
             "tool_calls_log": [{"tool_name", "arguments", "result"}, ...]
-        }. The log is also stored on self.tool_calls_log and cleared at the start of each run.
+        }.
+        
+        guardrails: Can be:
+          1. dict (Legacy/Hardcoded): {"pre_hook": bool, "post_hook": bool}
+          2. list (Dynamic/AI-Generated): [{"type": "pre_hook", "condition": "...", ...}]
         """
+        # unexpected types handling
+        if guardrails is None:
+            guardrails_config = {}
+            dynamic_rules = []
+        elif isinstance(guardrails, dict):
+            guardrails_config = guardrails
+            dynamic_rules = []
+        elif isinstance(guardrails, list):
+            guardrails_config = {}
+            dynamic_rules = guardrails
+        else:
+            guardrails_config = {}
+            dynamic_rules = []
+
         self.tool_calls_log = []
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -91,7 +109,83 @@ class PaymentAgent:
                     args = _json.loads(tc.function.arguments or "{}")
                 except Exception:
                     args = {}
+
+                # -- 1. Dynamic Pre-Hook Rules --
+                blocked_by_rule = False
+                block_message = "Action blocked by security guardrail."
+                
+                for rule in dynamic_rules:
+                    if rule.get("type") == "pre_hook":
+                        # Check tool name
+                        target_tool = rule.get("tool_name", "*")
+                        if target_tool != "*" and target_tool != name:
+                            continue
+                        
+                        # Evaluate condition
+                        condition = rule.get("condition", "False")
+                        try:
+                            # Safe eval context
+                            safe_locals = {"args": args, "tool_name": name}
+                            if eval(condition, {"__builtins__": {}}, safe_locals):
+                                blocked_by_rule = True
+                                block_message = rule.get("message", block_message)
+                                break
+                        except Exception as e:
+                            print(f"[Guardrail Check Error] {e}")
+
+                if blocked_by_rule:
+                     result = {"error": block_message}
+                     self.tool_calls_log.append(ToolCallRecord(name, args, result))
+                     messages.append({
+                         "role": "tool",
+                         "tool_call_id": tc.id,
+                         "content": __import__("json").dumps(result),
+                     })
+                     continue
+
+                # -- 2. Hardcoded Pre-Hook (Legacy) --
+                if guardrails_config.get("pre_hook"):
+                    if name == "process_payment" and args.get("amount", 0) > 10000: # >$100.00
+                         result = {"error": "Guardrail Violation: Payment exceeds authorized limit of $100.00. Transaction blocked."}
+                         self.tool_calls_log.append(ToolCallRecord(name, args, result))
+                         messages.append({
+                             "role": "tool",
+                             "tool_call_id": tc.id,
+                             "content": __import__("json").dumps(result),
+                         })
+                         continue
+
                 result = run_tool(name, args)
+                
+                # -- 3. Dynamic Post-Hook Rules --
+                for rule in dynamic_rules:
+                    if rule.get("type") == "post_hook":
+                         target_tool = rule.get("tool_name", "*")
+                         if target_tool != "*" and target_tool != name:
+                            continue
+                         
+                         condition = rule.get("condition", "False")
+                         try:
+                             safe_locals = {"args": args, "result": result, "tool_name": name, "str": str}
+                             if eval(condition, {"__builtins__": {}, "str": str}, safe_locals):
+                                 action = rule.get("action")
+                                 if action == "block_result":
+                                     result = {"error": rule.get("message", "Result blocked by guardrail")}
+                                 elif action == "redact_field":
+                                     target_field = rule.get("target_field")
+                                     if isinstance(result, dict) and target_field in result:
+                                         result[target_field] = rule.get("replacement", "<REDACTED>")
+                         except Exception as e:
+                             print(f"[Guardrail Post-Check Error] {e}")
+
+                # -- 4. Hardcoded Post-Hook (Legacy) --
+                if guardrails_config.get("post_hook"):
+                    if isinstance(result, dict):
+                        if "id" in result:
+                            result["id"] = "<REDACTED_ID>"
+                        if "customer" in result:
+                            result["customer"] = "<REDACTED_PII>"
+
                 self.tool_calls_log.append(ToolCallRecord(name, args, result))
                 messages.append({
                     "role": "tool",
@@ -104,7 +198,7 @@ class PaymentAgent:
         }
 
 
-def run_payment_agent(user_id: str, user_message: str, model: str | None = None) -> dict[str, Any]:
+def run_payment_agent(user_id: str, user_message: str, model: Union[str, None] = None, guardrails: Union[dict[str, Any], None] = None) -> dict[str, Any]:
     """One-shot: run the payment agent and return reply + tool_calls_log."""
     agent = PaymentAgent(model=model)
-    return agent.run(user_id=user_id, user_message=user_message)
+    return agent.run(user_id=user_id, user_message=user_message, guardrails=guardrails)

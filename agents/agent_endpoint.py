@@ -41,9 +41,10 @@ def prompt():
     if not message:
         return jsonify({"error": "message is required"}), 400
     user_id = (data.get("user_id") or "api_user").strip() or "api_user"
+    guardrails = data.get("guardrails") or {}
     try:
         run_payment_agent = _get_agent()
-        out = run_payment_agent(user_id=user_id, user_message=message)
+        out = run_payment_agent(user_id=user_id, user_message=message, guardrails=guardrails)
         return jsonify({
             "reply": out.get("reply", ""),
             "tool_calls_log": out.get("tool_calls_log", []),

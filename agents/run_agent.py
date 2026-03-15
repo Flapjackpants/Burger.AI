@@ -22,7 +22,13 @@ else:
 def main():
     user_message = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else "I'd like to pay $19.99 for lunch."
     user_id = "test_user_1"
-    out = run_payment_agent(user_id=user_id, user_message=user_message)
+    # Example: enable guardrails if "GUARDRAILS" env var is set
+    guardrails = {}
+    if os.environ.get("GUARDRAILS"):
+        guardrails = {"pre_hook": True, "post_hook": True}
+        print(f"Running with guardrails: {guardrails}")
+
+    out = run_payment_agent(user_id=user_id, user_message=user_message, guardrails=guardrails)
     print("Reply:", out["reply"])
     print("\nTool calls (for efficacy/safety/guardrail testing):")
     for i, log in enumerate(out["tool_calls_log"], 1):

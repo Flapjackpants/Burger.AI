@@ -19,7 +19,9 @@ PAYMENT_REQUIRE_DESCRIPTION = True
 # In test mode (sk_test_ key), process_payment will auto-confirm with a test card so the payment lands. In live mode we only create the intent (no charge).
 
 # Ensure .env is loaded (agents.utils does this on import)
-def _get_stripe_key() -> str | None:
+from typing import Union
+
+def _get_stripe_key() -> Union[str, None]:
     return os.getenv("STRIPE_SECRET_KEY")
 
 def _stripe_call(fn, *args, **kwargs) -> dict[str, Any]:

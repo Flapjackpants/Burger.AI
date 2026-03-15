@@ -141,8 +141,13 @@ export function AgenticSafetyDashboard() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800">
-      {/* Header */}
+    <div
+      className="min-h-screen text-slate-800"
+      style={{
+        background: "linear-gradient(to bottom, #d4edda 0%, #a8d5ba 40%, #5a9f6f 70%, #2d5a3d 100%)",
+      }}
+    >
+      {/* Header - white background, black text */}
       <header className="border-b border-slate-200 bg-white shadow-sm">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
           <div>

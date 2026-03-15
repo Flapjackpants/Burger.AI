@@ -1,8 +1,8 @@
-from openai import AsyncOpenAI
+from openai import OpenAI
 import os
 import json
 
-# OpenAI client will be initialized when needed
+# Sync client: redTeamLLM uses .create() without await
 client = None
 
 def get_openai_client():
@@ -10,10 +10,8 @@ def get_openai_client():
     if client is None:
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
-            # Fallback for local testing if env var not set, though it should be
             print("Warning: OPENAI_API_KEY not found in environment variables.")
-            return AsyncOpenAI() # This will look for env var by default
-        client = AsyncOpenAI(api_key=api_key)
+        client = OpenAI(api_key=api_key) if api_key else OpenAI()
     return client
 
 def parse_json_response(content):

@@ -1,6 +1,6 @@
 from flask import Response, stream_with_context, request, Blueprint, jsonify
-import time
 import json
+import time
 from controller.pipeline import composeData
 api = Blueprint("api", __name__)
 
@@ -17,19 +17,15 @@ def receive_data():
         "received": data
     })
 
-@api.route('/stream', methods=['POST'])
+@api.route("/stream", methods=["POST"])
 def stream():
     try:
         result = composeData(request)
 
-        data = request.json()
-        if not data:
-            return Response("data: error: No JSON body received\n\n", mimetype='text/event-stream'), 400
-
         def event_stream():
             try:
-                for char in behavior:
-                    yield f"data: {json.dumps(char)}\n\n"
+                for category, cases in result.items():
+                    yield f"data: {json.dumps({'category': category, 'cases': cases})}\n\n"
                 yield "data: [DONE]\n\n"
             except Exception as e:
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
@@ -37,16 +33,15 @@ def stream():
 
         return Response(
             stream_with_context(event_stream()),
-            mimetype='text/event-stream',
+            mimetype="text/event-stream",
             headers={
-                'Cache-Control': 'no-cache',
-                'X-Accel-Buffering': 'no',
-            }
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
         )
-
     except Exception as e:
         return Response(
             f"data: {json.dumps({'error': str(e)})}\n\n",
-            mimetype='text/event-stream',
-            status=500
+            mimetype="text/event-stream",
+            status=500,
         )

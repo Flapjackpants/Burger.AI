@@ -176,7 +176,7 @@ export function AgenticSafetyDashboard() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
           <div>
             <h1 className="text-xl font-semibold tracking-tight text-slate-900">
-              Agentic Safety Dashboard
+              Burger.AI
             </h1>
             <p className="text-sm text-slate-500">
               Safety & reliability across Sycophancy, Prompt Injection, Role-Play, PII, Hallucination & Jailbreak

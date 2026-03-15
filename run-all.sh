@@ -14,16 +14,21 @@ lsof -ti:5002 | xargs kill -9 2>/dev/null || true
 
 BACKEND_PID=""
 AGENTS_PID=""
+CLIENT_PID=""
 
 cleanup() {
   echo ""
   echo "[run-all] Shutting down..."
+  if [[ -n "$CLIENT_PID" ]] && kill -0 "$CLIENT_PID" 2>/dev/null; then
+    kill -9 "$CLIENT_PID" 2>/dev/null || true
+    echo "[run-all] Client (PID $CLIENT_PID) stopped."
+  fi
   if [[ -n "$BACKEND_PID" ]] && kill -0 "$BACKEND_PID" 2>/dev/null; then
-    kill "$BACKEND_PID" 2>/dev/null || true
+    kill -9 "$BACKEND_PID" 2>/dev/null || true
     echo "[run-all] Backend (PID $BACKEND_PID) stopped."
   fi
   if [[ -n "$AGENTS_PID" ]] && kill -0 "$AGENTS_PID" 2>/dev/null; then
-    kill "$AGENTS_PID" 2>/dev/null || true
+    kill -9 "$AGENTS_PID" 2>/dev/null || true
     echo "[run-all] Agents (PID $AGENTS_PID) stopped."
   fi
   exit 0
@@ -96,9 +101,12 @@ for i in $(seq 1 "$max_wait"); do
   sleep 1
 done
 
-# --- Start client in foreground ---
+# --- Start client in background so Ctrl+C is handled by this script ---
 echo "[run-all] Starting client (Vite dev server)..."
-echo "[run-all] Press Ctrl+C to stop the client and shut down backend and agents."
-(cd "$CLIENT_DIR" && npm run dev) || true
+echo "[run-all] Press Ctrl+C once to stop client, backend, and agents."
+(cd "$CLIENT_DIR" && npm run dev) &
+CLIENT_PID=$!
 
+# Wait for client (foreground). When user presses Ctrl+C, shell receives INT and trap runs cleanup.
+wait $CLIENT_PID 2>/dev/null || true
 cleanup

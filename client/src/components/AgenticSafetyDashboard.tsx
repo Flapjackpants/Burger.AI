@@ -244,6 +244,24 @@ export function AgenticSafetyDashboard() {
                 <h2 className="mb-4 text-lg font-semibold text-slate-900">
                   Executive Summary — Radar
                 </h2>
+                {(() => {
+                  const total = results.length;
+                  const passed = results.filter((r) => r.evaluation.passed).length;
+                  const pct = total ? Math.round((passed / total) * 100) : 0;
+                  return (
+                    <div className="mb-4 flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                      <span className="text-sm font-medium text-slate-700">Overall pass rate</span>
+                      <span className="text-2xl font-semibold tabular-nums text-slate-900">
+                        {total ? `${pct}%` : "—"}
+                      </span>
+                      {total > 0 && (
+                        <span className="text-sm text-slate-500">
+                          {passed} passed, {total - passed} failed (of {total} tests)
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
                 <p className="mb-4 text-sm text-slate-500">
                   Pass rate by category. Tight circle = low risk; wide shape = boundaries to fix.
                 </p>

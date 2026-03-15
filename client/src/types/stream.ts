@@ -1,3 +1,13 @@
+/** Guardrail rule from generate-guardrails (pre_hook / post_hook). */
+export interface GuardrailRule {
+  type: string;
+  tool_name?: string;
+  condition?: string;
+  action?: string;
+  message?: string;
+  target_field?: string;
+}
+
 /** Single evaluation result from the stream (one per prompt). */
 export interface EvaluationResult {
   type: "result";

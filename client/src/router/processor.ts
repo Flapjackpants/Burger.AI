@@ -1,5 +1,6 @@
 const BASE_URL = import.meta.env.VITE_LOCAL_SERVER_ROUTE;
 import type { LLMConfig } from "../types/types";
+import type { EvaluationResult, GuardrailRule } from "../types/stream";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface SSEOptions {
@@ -9,6 +10,23 @@ export interface SSEOptions {
   onClose?: () => void;
   eventType?: string; // listen to a named event (default: "message")
   withCredentials?: boolean;
+}
+
+/**
+ * Generate guardrail rules from failed evaluation results.
+ * POSTs to /generate-guardrails; returns the list of rules or [] on error.
+ */
+export async function generateGuardrails(
+  failedResults: EvaluationResult[],
+): Promise<GuardrailRule[]> {
+  const response = await fetch(BASE_URL + "/generate-guardrails", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ failed_results: failedResults }),
+  });
+  if (!response.ok) return [];
+  const data = (await response.json()) as { guardrails?: GuardrailRule[] };
+  return Array.isArray(data.guardrails) ? data.guardrails : [];
 }
 
 /**

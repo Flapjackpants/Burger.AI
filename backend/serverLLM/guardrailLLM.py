@@ -1,80 +1,124 @@
 from .utils import get_openai_client, parse_json_response, chat_completion_with_retry
 import json
 
-SYSTEM_PROMPT = """You are an AI Security Guardrail Engineer.
-Your job is to analyze failed Red Team evaluations and generate JSON-based guardrails to prevent those specific failures in the future.
-The agent operates with tools like `process_payment`, `get_balance`, `create_transfer`, etc.
+SYSTEM_PROMPT = """You are an AI Security Guardrail Engineer for a financial/payment agent.
+Your job is to analyze failed Red Team evaluations and generate precise JSON guardrails that prevent those exact failure modes.
+
+RULES FOR HIGH ACCURACY:
+- Produce 4-6 high-impact rules. One rule per distinct failure pattern; merge similar failures into one rule.
+- Use the EXACT tool names the agent supports: process_payment, get_balance, create_transfer, create_payout, list_payouts, add_test_balance, list_transfers, create_issuing_card, list_issuing_cards, list_financial_connection_accounts, create_invoice, list_invoices, finalize_invoice. Use "*" only when the rule must apply to every tool.
+- Every condition MUST be a valid Python expression that can be evaluated with only the allowed variables (args for pre_hook; args, result, str for post_hook). No placeholders or prose.
+- For sycophancy or risky payment approvals: use pre_hook on process_payment with conditions on args (e.g. args.get('amount', 0) > 50000 for large amounts).
+- For PII/sensitive leaks: use post_hook with action "block_result" or "redact_field", and a condition on result.
+- For prompt injection or unauthorized actions: use pre_hook with a condition that detects suspicious args (e.g. unexpected keys or values).
 """
 
-GUARDRAIL_GENERATION_PROMPT = """
-Based on the following evaluation failures, generate a list of implementation-agnostic JSON guardrails.
+GUARDRAIL_GENERATION_PROMPT = """Analyze these evaluation failures and generate exactly 4-6 JSON guardrail rules that would prevent them. Output ONLY a valid JSON array of rule objects—no markdown, no code fence, no explanation.
 
-FAILURES:
+FAILURES (each includes category, reason, the user prompt that caused failure, and expected behavior when available):
 {failures_text}
 
-The agent has a guardrail engine that understands the following JSON structure:
+JSON RULE FORMAT the engine accepts:
 
-1. PRE-HOOK (Blocks tool calls before they happen):
+PRE-HOOK (block a tool call before it runs). Variables available: args (dict), tool_name (str).
 {{
-    "type": "pre_hook",
-    "tool_name": "process_payment", // or "*" for all
-    "condition": "args['amount'] > 5000", // Python expression using 'args' dictionary
-    "action": "block",
-    "message": "Payment amount too high."
+  "type": "pre_hook",
+  "tool_name": "process_payment",
+  "condition": "args.get('amount', 0) > 50000",
+  "action": "block",
+  "message": "Payment amount exceeds allowed limit."
 }}
 
-2. POST-HOOK (Modifies/Blocks tool results before model sees them):
+POST-HOOK (block or modify a tool result before the model sees it). Variables: args, result, tool_name, str.
 {{
-    "type": "post_hook",
-    "tool_name": "*",
-    "condition": "'private_key' in str(result)", // Python expression using 'result' (dict or str)
-    "action": "redact_field", // or "block_result"
-    "target_field": "private_key", // For redact_field action
-    "message": "Sensitive data blocked." // For block_result action
+  "type": "post_hook",
+  "tool_name": "*",
+  "condition": "'secret' in str(result)",
+  "action": "block_result",
+  "message": "Sensitive data blocked."
 }}
 
-Generate a valid JSON list of these rule objects.
-"""
+For redact_field: include "target_field" and optionally "replacement" (default "<REDACTED>").
+
+Output only the JSON array, e.g. [ {{ "type": "pre_hook", ... }}, ... ]."""
+
+
+def _normalize_rule(rule):
+    """Keep only fields the guardrail engine uses; ensure types are correct."""
+    if not isinstance(rule, dict):
+        return None
+    rtype = rule.get("type")
+    if rtype not in ("pre_hook", "post_hook"):
+        return None
+    out = {"type": rtype}
+    if rule.get("tool_name") is not None:
+        out["tool_name"] = str(rule["tool_name"])
+    if rule.get("condition"):
+        out["condition"] = str(rule["condition"]).strip()
+    if rule.get("action"):
+        out["action"] = str(rule["action"])
+    if rule.get("message"):
+        out["message"] = str(rule["message"])
+    if rule.get("target_field"):
+        out["target_field"] = str(rule["target_field"])
+    if rule.get("replacement") is not None:
+        out["replacement"] = str(rule["replacement"])
+    if rtype == "pre_hook" and "condition" not in out:
+        return None
+    if rtype == "post_hook" and "condition" not in out:
+        return None
+    return out
+
 
 def generate_guardrails(evaluation_results):
     """
     Generate guardrail rules based on evaluation results (failures).
-    
-    Args:
-        evaluation_results (list): List of evaluation dicts from EvaluatorLLM.
-        
-    Returns:
-        list: A list of guardrail rule dictionaries.
+    Uses enriched failure context (including expected_behavior) and normalizes
+    output for higher accuracy and engine compatibility.
     """
-    # 1. format failures
     failures = []
     for res in evaluation_results:
-        # Check if failed
         eval_data = res.get("evaluation", {})
-        if isinstance(eval_data, dict) and eval_data.get("passed") is False:
-            failures.append(f"- Category: {res.get('category')}\n  Reason: {eval_data.get('reason')}\n  Raw Prompt causing failure: {res.get('prompt')}")
-            
+        if not isinstance(eval_data, dict) or eval_data.get("passed") is not False:
+            continue
+        reason = eval_data.get("reason", "")
+        prompt = res.get("prompt", "")
+        category = res.get("category", "")
+        expected = res.get("expected_behavior") or ""
+        block = (
+            f"- Category: {category}\n"
+            f"  Reason: {reason}\n"
+            f"  User prompt causing failure: {prompt}\n"
+        )
+        if expected:
+            block += f"  Expected behavior (agent should): {expected}\n"
+        failures.append(block)
+
     if not failures:
         return []
 
     failures_text = "\n".join(failures)
-    
     prompt = GUARDRAIL_GENERATION_PROMPT.format(failures_text=failures_text)
-    
+
     client = get_openai_client("GUARD")
     response = chat_completion_with_retry(
         client,
         model="gpt-4",
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt}
+            {"role": "user", "content": prompt},
         ],
-        temperature=0.0
+        temperature=0.0,
     )
-    
+
     content = response.choices[0].message.content
-    rules = parse_json_response(content)
-    
-    if isinstance(rules, list):
-        return rules
-    return []
+    parsed = parse_json_response(content)
+
+    if not isinstance(parsed, list):
+        return []
+    normalized = []
+    for item in parsed:
+        r = _normalize_rule(item)
+        if r:
+            normalized.append(r)
+    return normalized

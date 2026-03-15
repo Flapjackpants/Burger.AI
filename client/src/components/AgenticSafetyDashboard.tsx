@@ -1,10 +1,11 @@
 import { useState, useCallback, useRef } from "react";
-import { connectSSE } from "../router/processor";
+import { connectSSE, generateGuardrails } from "../router/processor";
 import type { LLMConfig } from "../types/types";
 import {
   parseStreamPayload,
   isResult,
   type EvaluationResult,
+  type GuardrailRule,
   type StreamPayload,
   CATEGORY_LABELS,
 } from "../types/stream";
@@ -83,6 +84,9 @@ export function AgenticSafetyDashboard() {
   const [paramsJson, setParamsJson] = useState<string>(defaultParamsJson);
   const [paramsOpen, setParamsOpen] = useState(false);
   const [paramsError, setParamsError] = useState<string | null>(null);
+  const [guardrails, setGuardrails] = useState<GuardrailRule[] | null>(null);
+  const [guardrailsLoading, setGuardrailsLoading] = useState(false);
+  const [guardrailsError, setGuardrailsError] = useState<string | null>(null);
   const disconnectRef = useRef<(() => void) | null>(null);
 
   const onMessage = useCallback((raw: string) => {
@@ -116,6 +120,9 @@ export function AgenticSafetyDashboard() {
         return;
       }
     }
+    if (guardrails != null && guardrails.length > 0) {
+      body = { ...(body ?? {}), guardrails };
+    }
     connectSSE(defaultConfig, {
       onMessage,
       onOpen: () => {
@@ -132,13 +139,30 @@ export function AgenticSafetyDashboard() {
     }, body).then((disconnect) => {
       disconnectRef.current = disconnect;
     });
-  }, [onMessage, paramsJson]);
+  }, [onMessage, paramsJson, guardrails]);
 
   const stopEvaluation = useCallback(() => {
     disconnectRef.current?.();
     disconnectRef.current = null;
     setIsStreaming(false);
   }, []);
+
+  const failedResults = results.filter((r) => !r.evaluation.passed);
+  const handleGenerateGuardrails = useCallback(() => {
+    const failed = results.filter((r) => !r.evaluation.passed);
+    if (failed.length === 0) return;
+    setGuardrailsLoading(true);
+    setGuardrailsError(null);
+    generateGuardrails(failed)
+      .then((rules) => {
+        setGuardrails(rules);
+        setGuardrailsLoading(false);
+      })
+      .catch((e) => {
+        setGuardrailsError(e instanceof Error ? e.message : "Failed to generate guardrails");
+        setGuardrailsLoading(false);
+      });
+  }, [results]);
 
   return (
     <div
@@ -169,7 +193,27 @@ export function AgenticSafetyDashboard() {
             <span className="text-sm text-slate-500">
               {status || "Idle"}
               {results.length > 0 && ` · ${results.length} result(s)`}
+              {guardrails != null && guardrails.length > 0 && ` · Using ${guardrails.length} guardrail(s)`}
             </span>
+            {guardrails != null && guardrails.length > 0 && !isStreaming && (
+              <button
+                type="button"
+                onClick={() => setGuardrails(null)}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+              >
+                Clear guardrails
+              </button>
+            )}
+            {!isStreaming && results.length > 0 && failedResults.length > 0 && (
+              <button
+                type="button"
+                onClick={handleGenerateGuardrails}
+                disabled={guardrailsLoading}
+                className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 shadow-sm hover:bg-amber-100 disabled:opacity-50"
+              >
+                {guardrailsLoading ? "Generating…" : "Generate guardrails from failures"}
+              </button>
+            )}
             {isStreaming ? (
               <button
                 onClick={stopEvaluation}
@@ -212,6 +256,66 @@ export function AgenticSafetyDashboard() {
         {error && (
           <div className="mx-auto max-w-7xl px-4 py-2 sm:px-6">
             <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
+          </div>
+        )}
+        {guardrailsError && (
+          <div className="mx-auto max-w-7xl px-4 py-2 sm:px-6">
+            <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              Guardrails: {guardrailsError}
+            </div>
+          </div>
+        )}
+        {guardrails != null && guardrails.length > 0 && (
+          <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <h3 className="mb-3 text-sm font-semibold text-slate-800">
+                Proposed guardrails ({guardrails.length})
+              </h3>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {guardrails.slice(0, 4).map((rule, idx) => (
+                  <div
+                    key={idx}
+                    className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
+                  >
+                    <div className="mb-1 flex items-center gap-2">
+                      <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-xs font-medium text-indigo-800">
+                        {rule.type === "pre_hook" ? "Pre-hook" : rule.type === "post_hook" ? "Post-hook" : rule.type}
+                      </span>
+                      {rule.tool_name && (
+                        <span className="truncate text-xs text-slate-500" title={rule.tool_name}>
+                          {rule.tool_name === "*" ? "all tools" : rule.tool_name}
+                        </span>
+                      )}
+                    </div>
+                    {rule.condition && (
+                      <p className="mb-1 truncate font-mono text-xs text-slate-700" title={rule.condition}>
+                        {rule.condition}
+                      </p>
+                    )}
+                    {rule.action && (
+                      <p className="text-xs text-slate-600">
+                        <span className="font-medium">Action:</span> {rule.action}
+                      </p>
+                    )}
+                    {rule.message && (
+                      <p className="mt-1 truncate text-xs text-slate-500" title={rule.message}>
+                        {rule.message}
+                      </p>
+                    )}
+                    {rule.target_field && (
+                      <p className="text-xs text-slate-500">
+                        <span className="font-medium">Field:</span> {rule.target_field}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {guardrails.length > 4 && (
+                <p className="mt-2 text-xs text-slate-500">
+                  Showing 4 of {guardrails.length} guardrails. All {guardrails.length} are applied when you run evaluation.
+                </p>
+              )}
+            </div>
           </div>
         )}
       </header>

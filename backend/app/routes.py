@@ -3,6 +3,7 @@ import json
 import requests
 from controller.pipeline import composeData
 from controller.test_loop import run_evaluation_stream
+from serverLLM.guardrailLLM import generate_guardrails as generate_guardrails_llm
 
 api = Blueprint("api", __name__)
 
@@ -10,19 +11,23 @@ api = Blueprint("api", __name__)
 DEFAULT_LLM_LINK = "http://127.0.0.1:5002"
 
 
-def _get_wrapper(llm_config):
-    """Return a callable(prompt) -> { reply, tool_calls_log } that POSTs to llm_link/prompt."""
+def _get_wrapper(llm_config, guardrails=None):
+    """Return a callable(prompt) -> { reply, tool_calls_log } that POSTs to llm_link/prompt.
+    If guardrails is provided (list or dict), include it in each agent request for retesting."""
     base = (llm_config or {}).get("llm_link") or DEFAULT_LLM_LINK
     base = base.rstrip("/")
     url = base + "/prompt" if not base.endswith("/prompt") else base
-    print("[Routes] _get_wrapper: agent URL=%s" % url)
+    print("[Routes] _get_wrapper: agent URL=%s, guardrails=%s" % (url, "yes" if guardrails else "no"))
 
     def wrapper(prompt):
         print("[Routes] wrapper: POST to agent (prompt len=%d)" % len(prompt))
+        body = {"message": prompt}
+        if guardrails is not None:
+            body["guardrails"] = guardrails
         try:
             r = requests.post(
                 url,
-                json={"message": prompt},
+                json=body,
                 headers={"Content-Type": "application/json"},
                 timeout=60,
             )
@@ -56,6 +61,25 @@ def receive_data():
     return jsonify({"status": "success", "received": data})
 
 
+@api.route("/generate-guardrails", methods=["POST"])
+def generate_guardrails_route():
+    """Generate guardrail rules from failed evaluation results.
+    Body: { "failed_results": [ result, ... ] } (same shape as stream result events).
+    Returns: { "guardrails": [ rule, ... ] }."""
+    data = request.get_json() or {}
+    failed_results = data.get("failed_results")
+    if failed_results is None:
+        return jsonify({"guardrails": []}), 400
+    if not isinstance(failed_results, list):
+        return jsonify({"guardrails": [], "error": "failed_results must be a list"}), 400
+    if not failed_results:
+        return jsonify({"guardrails": []})
+    print("[Routes] POST /generate-guardrails: %d failed results" % len(failed_results))
+    rules = generate_guardrails_llm(failed_results)
+    print("[Routes] generate-guardrails returning %d rules" % len(rules))
+    return jsonify({"guardrails": rules})
+
+
 @api.route("/stream", methods=["POST"])
 def stream():
     print("[Routes] POST /stream entered")
@@ -73,10 +97,13 @@ def stream():
             }
             llm_config = {k: v for k, v in llm_config.items() if v is not None}
         print("[Routes] /stream llm_config keys:", list(llm_config.keys()))
+        guardrails = data.get("guardrails")
+        if guardrails is not None and not isinstance(guardrails, (list, dict)):
+            guardrails = None
 
         composed = composeData(request)
         print("[Routes] /stream composeData categories:", list(composed.keys()), "case counts:", {k: len(v) for k, v in composed.items()})
-        wrapper_fn = _get_wrapper(llm_config)
+        wrapper_fn = _get_wrapper(llm_config, guardrails=guardrails)
 
         def event_stream():
             try:

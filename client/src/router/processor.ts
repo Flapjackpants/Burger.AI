@@ -12,15 +12,27 @@ export interface SSEOptions {
 }
 
 /**
- * Establishes connection with SSE server. This was send back data contiously.
+ * Establishes connection with SSE server. Sends POST to /stream.
+ * If body is provided it is sent as-is; otherwise builds from config (behavior, description, etc.).
  */
 export async function connectSSE(
   config: LLMConfig,
   options: SSEOptions,
+  body?: Record<string, unknown>,
 ): Promise<() => void> {
   const { onMessage, onError, onOpen, onClose } = options;
 
   const controller = new AbortController();
+  const payload =
+    body != null && Object.keys(body).length > 0
+      ? body
+      : {
+          behavior: config.personality_statement,
+          description: config.description,
+          system_prompts: config.system_prompts,
+          disallowed_topics: config.disallowed_topics,
+          llm_link: config.llm_link,
+        };
 
   try {
     const response = await fetch(BASE_URL + "/stream", {
@@ -30,13 +42,7 @@ export async function connectSSE(
         Accept: "text/event-stream",
       },
       signal: controller.signal,
-      body: JSON.stringify({
-        behavior: config.personality_statement,
-        description: config.description,
-        system_prompts: config.system_prompts,
-        disallowed_topics: config.disallowed_topics,
-        llm_link: config.llm_link,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {

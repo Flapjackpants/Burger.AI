@@ -1,32 +1,27 @@
 """
-Test loop: iterate composeData in portions, run wrapper (agent) -> evaluator per case,
-yield JSON payloads for streaming to the client.
+Test loop: iterate composeData; for each prompt run wrapper (agent) -> evaluator,
+then yield one stream event per result (per-prompt streaming).
 
-Proposed JSON format for client visualization:
+JSON format for client:
 
   Ready (first event):
     { "type": "ready", "message": "Connection established. Starting evaluation." }
 
-  Portion (each batch of evaluated cases):
+  Result (one event per prompt, streamed as soon as that prompt is evaluated):
     {
-      "type": "portion",
-      "portion_index": 0,
+      "type": "result",
       "category": "Sycophancy Check",
-      "results": [
-        {
-          "prompt": "user prompt string",
-          "agent_reply": "agent response text",
-          "tool_calls": [ { "tool_name": "...", "arguments": {...}, "result": {...} } ],
-          "evaluation": { "passed": true|false, "reason": "...", "score": 0-10 },
-          "expected_behavior": "optional from red-team case"
-        }
-      ]
+      "case_index": 0,
+      "prompt": "user prompt string",
+      "agent_reply": "agent response text",
+      "tool_calls": [ { "tool_name": "...", "arguments": {...}, "result": {...} } ],
+      "evaluation": { "passed": true|false, "reason": "...", "score": 0-10 },
+      "expected_behavior": "optional from red-team case"
     }
 
   Done (final event):
     { "type": "done" }
 """
-import json
 from serverLLM.evaluatorLLM import evaluate
 
 
@@ -46,29 +41,26 @@ def _expected_behavior_from_case(case):
 
 def run_evaluation_stream(compose_data, llm_config, wrapper_fn, portion_by_category=True):
     """
-    Iterate composeData in portions; for each test case call wrapper_fn(prompt) -> (reply, tool_calls_log),
-    then evaluate; collect results and yield a JSON-serializable dict per portion.
+    For each test case: call wrapper_fn(prompt), then evaluate; yield one stream event
+    per prompt so the client receives results as each is ready.
 
     Args:
         compose_data: dict from composeData(), { category: [cases] }
         llm_config: dict for evaluator (and optionally wrapper)
         wrapper_fn: callable(prompt: str) -> dict with "reply" and "tool_calls_log"
-        portion_by_category: if True, one portion = one category; else use fixed size chunks
 
     Yields:
-        dict: ready, portion, or done payload (see module docstring).
+        dict: ready, then one "result" per case, then done.
     """
     print("[TestLoop] run_evaluation_stream entered, categories=%s" % list(compose_data.keys()))
     yield {"type": "ready", "message": "Connection established. Starting evaluation."}
     print("[TestLoop] yielded ready")
 
-    portion_index = 0
     for category, cases in compose_data.items():
         if not cases:
             print("[TestLoop] skip empty category: %s" % category)
             continue
         print("[TestLoop] processing category=%s, cases=%d" % (category, len(cases)))
-        results = []
         for i, case in enumerate(cases):
             prompt = _prompt_from_case(case)
             if not prompt:
@@ -82,15 +74,18 @@ def run_evaluation_stream(compose_data, llm_config, wrapper_fn, portion_by_categ
                 tool_calls_log = out.get("tool_calls_log") or []
             except Exception as e:
                 print("[TestLoop] case %d: wrapper error: %s" % (i, e))
-                reply = ""
-                tool_calls_log = []
-                results.append({
+                result = {
+                    "type": "result",
+                    "category": category,
+                    "case_index": i,
                     "prompt": prompt,
                     "agent_reply": "",
                     "tool_calls": [],
                     "evaluation": {"passed": False, "reason": f"Wrapper error: {e}", "score": 0},
                     "expected_behavior": expected_behavior,
-                })
+                }
+                print("[TestLoop] yielding result (wrapper error) category=%s case=%d" % (category, i))
+                yield result
                 continue
             print("[TestLoop] case %d: calling evaluator" % i)
             try:
@@ -106,7 +101,10 @@ def run_evaluation_stream(compose_data, llm_config, wrapper_fn, portion_by_categ
             except Exception as e:
                 print("[TestLoop] case %d: evaluator error: %s" % (i, e))
                 evaluation = {"passed": False, "reason": f"Evaluator error: {e}", "score": 0}
-            results.append({
+            result = {
+                "type": "result",
+                "category": category,
+                "case_index": i,
                 "prompt": prompt,
                 "agent_reply": reply,
                 "tool_calls": tool_calls_log,
@@ -116,15 +114,9 @@ def run_evaluation_stream(compose_data, llm_config, wrapper_fn, portion_by_categ
                     "score": evaluation.get("score", 0),
                 },
                 "expected_behavior": expected_behavior,
-            })
-        print("[TestLoop] yielding portion index=%d category=%s results=%d" % (portion_index, category, len(results)))
-        yield {
-            "type": "portion",
-            "portion_index": portion_index,
-            "category": category,
-            "results": results,
-        }
-        portion_index += 1
+            }
+            print("[TestLoop] yielding result category=%s case=%d" % (category, i))
+            yield result
 
     print("[TestLoop] yielding done")
     yield {"type": "done"}

@@ -36,7 +36,7 @@ def health():
 def prompt():
     """
     Prompt the agent like in the terminal. Send JSON:
-      {"message": "Charge me 25 dollars for lunch", "user_id": "optional"}
+      {"message": "Charge me 25 dollars for lunch", "user_id": "optional", "model": "openai" (default) or "claude"}
     Returns: {"reply": "...", "tool_calls_log": [{"tool_name", "arguments", "result"}, ...]}
     On agent failure we return 200 with reply/error so the evaluator can score it instead of 500.
     """
@@ -46,9 +46,19 @@ def prompt():
         return jsonify({"error": "message is required"}), 400
     user_id = (data.get("user_id") or "api_user").strip() or "api_user"
     guardrails = data.get("guardrails") or {}
+    
+    # Check for model selection (demo feature)
+    model_provider = (data.get("model") or "openai").lower()
+    
     try:
-        run_payment_agent = _get_agent()
-        out = run_payment_agent(user_id=user_id, user_message=message, guardrails=guardrails)
+        if model_provider.startswith("claude"):
+             print(f"[Endpoint] Switching to CLAUDE agent for user {user_id}")
+             from agents.claude_agent import run_claude_agent
+             out = run_claude_agent(user_id=user_id, user_message=message, guardrails=guardrails)
+        else:
+             run_payment_agent = _get_agent()
+             out = run_payment_agent(user_id=user_id, user_message=message, guardrails=guardrails)
+             
         return jsonify({
             "reply": out.get("reply", ""),
             "tool_calls_log": out.get("tool_calls_log", []),

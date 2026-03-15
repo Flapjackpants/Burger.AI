@@ -16,6 +16,52 @@ import {
 } from "recharts";
 import type { EvaluationResult } from "../types/stream";
 
+// ─── Shared: Score distribution (0–10 buckets) for any category ───────────────
+export function ScoreDistributionChart({
+  results,
+  category,
+}: {
+  results: EvaluationResult[];
+  category: string;
+}) {
+  const filtered = results.filter((r) => r.category === category);
+  const buckets: Record<number, number> = {};
+  for (let i = 0; i <= 10; i++) buckets[i] = 0;
+  for (const r of filtered) {
+    const s = Math.min(10, Math.max(0, Math.round(r.evaluation.score)));
+    buckets[s] = (buckets[s] || 0) + 1;
+  }
+  const data = Object.entries(buckets).map(([score, count]) => ({
+    score: Number(score),
+    count,
+  }));
+  if (filtered.length === 0) return null;
+  return (
+    <ResponsiveContainer width="100%" height={200}>
+      <BarChart
+        data={data}
+        margin={{ top: 12, right: 12, left: 12, bottom: 24 }}
+        layout="vertical"
+      >
+        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+        <XAxis type="number" tick={{ fontSize: 10 }} />
+        <YAxis type="category" dataKey="score" width={24} tick={{ fontSize: 10 }} />
+        <Tooltip
+          content={({ payload }) =>
+            payload?.[0] && (
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg">
+                <p className="font-medium text-slate-800">Score {payload[0].payload.score}</p>
+                <p className="text-sm text-slate-600">{payload[0].payload.count} cases</p>
+              </div>
+            )
+          }
+        />
+        <Bar dataKey="count" name="Cases" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
 // ─── 1. Sycophancy: Divergent Bar (Pass vs Fail alignment) ─────────────────────
 export function SycophancyBarChart({ results }: { results: EvaluationResult[] }) {
   const filtered = results.filter((r) => r.category === "Sycophancy Check");
@@ -173,44 +219,11 @@ export function PIIBubbleChart({ results }: { results: EvaluationResult[] }) {
   );
 }
 
-// ─── 5. Hallucination: Score distribution (violin-like as bar distribution) ──
+// ─── 5. Hallucination: Score distribution (uses shared component) ──────────────
 export function HallucinationViolin({ results }: { results: EvaluationResult[] }) {
   const filtered = results.filter((r) => r.category === "Hallucination Variance");
-  const buckets: Record<number, number> = {};
-  for (let i = 0; i <= 10; i++) buckets[i] = 0;
-  for (const r of filtered) {
-    const s = Math.min(10, Math.max(0, Math.round(r.evaluation.score)));
-    buckets[s] = (buckets[s] || 0) + 1;
-  }
-  const data = Object.entries(buckets).map(([score, count]) => ({
-    score: Number(score),
-    count,
-  }));
   if (filtered.length === 0) return <EmptyChart label="Hallucination" />;
-  return (
-    <ResponsiveContainer width="100%" height={280}>
-      <BarChart
-        data={data}
-        margin={{ top: 12, right: 12, left: 12, bottom: 24 }}
-        layout="vertical"
-      >
-        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-        <XAxis type="number" tick={{ fontSize: 10 }} />
-        <YAxis type="category" dataKey="score" width={24} tick={{ fontSize: 10 }} />
-        <Tooltip
-          content={({ payload }) =>
-            payload?.[0] && (
-              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg">
-                <p className="font-medium text-slate-800">Score {payload[0].payload.score}</p>
-                <p className="text-sm text-slate-600">{payload[0].payload.count} cases</p>
-              </div>
-            )
-          }
-        />
-        <Bar dataKey="count" name="Cases" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
-      </BarChart>
-    </ResponsiveContainer>
-  );
+  return <ScoreDistributionChart results={results} category="Hallucination Variance" />;
 }
 
 // ─── Advanced Jailbreak: simple bar (pass/fail per case) ──────────────────────

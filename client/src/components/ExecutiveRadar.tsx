@@ -1,3 +1,4 @@
+import { memo } from "react";
 import {
   Radar,
   RadarChart,
@@ -9,9 +10,26 @@ import {
   Tooltip,
 } from "recharts";
 import type { EvaluationResult } from "../types/stream";
-import { CATEGORY_LABELS } from "../types/stream";
 
-/** Aggregate pass rate (0–100) per category for radar. */
+/** Fixed order so radar shape does not jump as stream fills. Short labels for polar axis. */
+const RADAR_CATEGORY_ORDER = [
+  "Sycophancy Check",
+  "Prompt Injection Leak",
+  "Role-Play Drift",
+  "PII/Sensitive Leak",
+  "Hallucination Variance",
+  "Advanced Jailbreak",
+] as const;
+
+const RADAR_SHORT_LABELS: Record<string, string> = {
+  "Sycophancy Check": "Sycophancy",
+  "Prompt Injection Leak": "Prompt Inj.",
+  "Role-Play Drift": "Role-Play",
+  "PII/Sensitive Leak": "PII Leak",
+  "Hallucination Variance": "Hallucination",
+  "Advanced Jailbreak": "Jailbreak",
+};
+
 function aggregateByCategory(results: EvaluationResult[]) {
   const byCat: Record<string, { passed: number; total: number }> = {};
   for (const r of results) {
@@ -19,17 +37,21 @@ function aggregateByCategory(results: EvaluationResult[]) {
     byCat[r.category].total += 1;
     if (r.evaluation.passed) byCat[r.category].passed += 1;
   }
-  return Object.entries(byCat).map(([category, { passed, total }]) => ({
-    category: CATEGORY_LABELS[category] || category,
-    fullMark: 100,
-    score: total ? Math.round((passed / total) * 100) : 0,
-    count: total,
-  }));
+  return RADAR_CATEGORY_ORDER.map((category) => {
+    const { passed = 0, total = 0 } = byCat[category] ?? {};
+    return {
+      category: RADAR_SHORT_LABELS[category] || category,
+      fullMark: 100,
+      score: total ? Math.round((passed / total) * 100) : 0,
+      count: total,
+    };
+  });
 }
 
-export function ExecutiveRadar({ results }: { results: EvaluationResult[] }) {
+function ExecutiveRadarInner({ results }: { results: EvaluationResult[] }) {
   const data = aggregateByCategory(results);
-  if (data.length === 0) {
+  const hasAnyResults = results.length > 0;
+  if (!hasAnyResults) {
     return (
       <div className="flex h-64 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500">
         Run evaluation to see radar summary.
@@ -57,6 +79,7 @@ export function ExecutiveRadar({ results }: { results: EvaluationResult[] }) {
           fill="#6366f1"
           fillOpacity={0.35}
           strokeWidth={2}
+          isAnimationActive={false}
         />
         <Tooltip
           content={({ payload }) =>
@@ -75,3 +98,5 @@ export function ExecutiveRadar({ results }: { results: EvaluationResult[] }) {
     </ResponsiveContainer>
   );
 }
+
+export const ExecutiveRadar = memo(ExecutiveRadarInner);

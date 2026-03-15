@@ -10,6 +10,7 @@ import {
 } from "../types/stream";
 import { ExecutiveRadar } from "./ExecutiveRadar";
 import {
+  ScoreDistributionChart,
   SycophancyBarChart,
   PromptInjectionFlow,
   RolePlayScatter,
@@ -17,6 +18,9 @@ import {
   HallucinationViolin,
   JailbreakBar,
 } from "./CategoryCharts";
+import { SubparCaseCard } from "./SubparCaseCard";
+
+const SUBPAR_SCORE_THRESHOLD = 6;
 
 const CATEGORIES = [
   "Executive",
@@ -44,6 +48,31 @@ const defaultParamsJson = `{
   "llm_link": "http://127.0.0.1:5002",
   "num_cases": 5
 }`;
+
+function SubparSection({
+  results,
+  category,
+}: {
+  results: EvaluationResult[];
+  category: string;
+}) {
+  const subpar = results.filter(
+    (r) => r.category === category && r.evaluation.score < SUBPAR_SCORE_THRESHOLD
+  );
+  if (subpar.length === 0) return null;
+  return (
+    <div className="mt-8">
+      <h3 className="mb-3 text-sm font-semibold text-slate-800">
+        Subpar cases (score &lt; {SUBPAR_SCORE_THRESHOLD})
+      </h3>
+      <div className="space-y-2">
+        {subpar.map((r, i) => (
+          <SubparCaseCard key={`${r.category}-${r.case_index}-${i}`} result={r} />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function AgenticSafetyDashboard() {
   const [results, setResults] = useState<EvaluationResult[]>([]);
@@ -94,8 +123,10 @@ export function AgenticSafetyDashboard() {
         setStatus("Stream open. Waiting for results…");
       },
       onClose: () => setIsStreaming(false),
-      onError: (err) => {
-        setError(typeof err === "string" ? err : (err as Error)?.message ?? "Unknown error");
+      onError: (err: unknown) => {
+        setError(
+          typeof err === "string" ? err : err instanceof Error ? err.message : "Unknown error"
+        );
         setIsStreaming(false);
       },
     }, body).then((disconnect) => {
@@ -222,7 +253,11 @@ export function AgenticSafetyDashboard() {
                 <p className="mb-4 text-sm text-slate-500">
                   Evaluation score per case. Low scores indicate alignment with biased prompts.
                 </p>
+                <h3 className="mb-2 text-sm font-medium text-slate-700">Score distribution</h3>
+                <ScoreDistributionChart results={results} category="Sycophancy Check" />
+                <div className="mt-4" />
                 <SycophancyBarChart results={results} />
+                <SubparSection results={results} category="Sycophancy Check" />
               </div>
             )}
             {selectedCategory === "Prompt Injection Leak" && (
@@ -233,7 +268,11 @@ export function AgenticSafetyDashboard() {
                 <p className="mb-4 text-sm text-slate-500">
                   How many prompts led to tool calls vs no tool; how many passed the safety check.
                 </p>
+                <h3 className="mb-2 text-sm font-medium text-slate-700">Score distribution</h3>
+                <ScoreDistributionChart results={results} category="Prompt Injection Leak" />
+                <div className="mt-4" />
                 <PromptInjectionFlow results={results} />
+                <SubparSection results={results} category="Prompt Injection Leak" />
               </div>
             )}
             {selectedCategory === "Role-Play Drift" && (
@@ -244,7 +283,11 @@ export function AgenticSafetyDashboard() {
                 <p className="mb-4 text-sm text-slate-500">
                   Score per case. Drift from persona shows as lower scores.
                 </p>
+                <h3 className="mb-2 text-sm font-medium text-slate-700">Score distribution</h3>
+                <ScoreDistributionChart results={results} category="Role-Play Drift" />
+                <div className="mt-4" />
                 <RolePlayScatter results={results} />
+                <SubparSection results={results} category="Role-Play Drift" />
               </div>
             )}
             {selectedCategory === "PII/Sensitive Leak" && (
@@ -255,7 +298,11 @@ export function AgenticSafetyDashboard() {
                 <p className="mb-4 text-sm text-slate-500">
                   Tool-call frequency by type. High-risk tools highlighted.
                 </p>
+                <h3 className="mb-2 text-sm font-medium text-slate-700">Score distribution</h3>
+                <ScoreDistributionChart results={results} category="PII/Sensitive Leak" />
+                <div className="mt-4" />
                 <PIIBubbleChart results={results} />
+                <SubparSection results={results} category="PII/Sensitive Leak" />
               </div>
             )}
             {selectedCategory === "Hallucination Variance" && (
@@ -266,7 +313,9 @@ export function AgenticSafetyDashboard() {
                 <p className="mb-4 text-sm text-slate-500">
                   Distribution of evaluation scores. Wide spread indicates instability.
                 </p>
+                <h3 className="mb-2 text-sm font-medium text-slate-700">Score distribution</h3>
                 <HallucinationViolin results={results} />
+                <SubparSection results={results} category="Hallucination Variance" />
               </div>
             )}
             {selectedCategory === "Advanced Jailbreak" && (
@@ -277,7 +326,11 @@ export function AgenticSafetyDashboard() {
                 <p className="mb-4 text-sm text-slate-500">
                   Score per jailbreak attempt. Low scores = successful defense.
                 </p>
+                <h3 className="mb-2 text-sm font-medium text-slate-700">Score distribution</h3>
+                <ScoreDistributionChart results={results} category="Advanced Jailbreak" />
+                <div className="mt-4" />
                 <JailbreakBar results={results} />
+                <SubparSection results={results} category="Advanced Jailbreak" />
               </div>
             )}
           </div>

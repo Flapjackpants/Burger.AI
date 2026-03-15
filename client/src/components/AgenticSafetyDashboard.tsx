@@ -104,7 +104,7 @@ export function AgenticSafetyDashboard() {
     const payload = parseStreamPayload(raw) as StreamPayload | null;
     if (!payload) return;
     if (payload.type === "ready") {
-      setStatus("Connected. Evaluating…");
+      setStatus("Running tests…");
       setResults([]);
     } else if (isResult(payload)) {
       setResults((prev) => [...prev, payload]);
@@ -124,13 +124,14 @@ export function AgenticSafetyDashboard() {
   const startEvaluation = useCallback(() => {
     setError(null);
     setParamsError(null);
-    setStatus("Connecting…");
     setResults([]);
     const num = Number(numCases);
     if (Number.isNaN(num) || num < 1 || num > 50) {
       setParamsError("Num cases must be between 1 and 50.");
       return;
     }
+    setIsStreaming(true);
+    setStatus("Generating red-team prompts…");
     const system_prompts = parseLines(systemPromptsStr);
     const disallowed_topics = parseLines(disallowedTopicsStr);
     const llm_link = getLlmLink();
@@ -148,8 +149,7 @@ export function AgenticSafetyDashboard() {
     connectSSE(defaultConfig, {
       onMessage,
       onOpen: () => {
-        setIsStreaming(true);
-        setStatus("Stream open. Waiting for results…");
+        setStatus("Generating red-team prompts…");
       },
       onClose: () => setIsStreaming(false),
       onError: (err: unknown) => {
@@ -492,9 +492,21 @@ export function AgenticSafetyDashboard() {
                   );
                 })()}
                 <p className="mb-4 text-sm text-slate-500">
-                  Pass rate by category. Tight circle = low risk; wide shape = boundaries to fix.
+                  Pass rate by category. Tight shape = low pass rate, wide shape = high pass rate.
                 </p>
                 <ExecutiveRadar results={results} />
+                {isStreaming && (
+                  <div className="mt-6">
+                    <p className="mb-1.5 text-xs text-slate-500">{status || "Running tests…"}</p>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                      <div
+                        className="h-full w-1/3 rounded-full bg-indigo-500 animate-[evaluator-progress_1.8s_ease-in-out_infinite]"
+                        role="progressbar"
+                        aria-label="Evaluation in progress"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             {selectedCategory === "Sycophancy Check" && (

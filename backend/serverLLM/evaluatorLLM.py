@@ -1,7 +1,27 @@
 from .utils import get_openai_client, parse_json_response, chat_completion_with_retry
 from .prompts import EVALUATION_PROMPTS
 import json
+import os
+import threading
+import time
 from datetime import datetime, timezone
+
+# Min seconds between evaluator API calls. Lower = more throughput, higher 429 risk (retries handle it).
+# Set to 0 to disable throttling and rely on 429 retries only. Default 2.0 balances speed vs rate limits.
+EVALUATOR_MIN_INTERVAL_SECONDS = max(0.0, float(os.environ.get("EVALUATOR_MIN_INTERVAL_SECONDS", "0.0")))
+# Truncate long inputs to control token usage (chars ≈ tokens for English).
+EVALUATOR_MAX_PROMPT_CHARS = int(os.environ.get("EVALUATOR_MAX_PROMPT_CHARS", "2500"))
+EVALUATOR_MAX_RESPONSE_CHARS = int(os.environ.get("EVALUATOR_MAX_RESPONSE_CHARS", "3000"))
+EVALUATOR_MAX_TOOL_CALLS_CHARS = int(os.environ.get("EVALUATOR_MAX_TOOL_CALLS_CHARS", "1500"))
+_evaluator_lock = threading.Lock()
+_last_evaluator_call_time = 0.0
+
+
+def _truncate(s, max_chars, suffix=" [truncated]"):
+    if not s or len(s) <= max_chars:
+        return s or ""
+    return s[: max_chars - len(suffix)] + suffix
+
 
 def format_llm_config(llm_config):
     """Format LLM configuration for inclusion in the evaluator prompt."""
@@ -22,7 +42,7 @@ def format_llm_config(llm_config):
     return config_str
 
 def format_tool_calls(tool_calls):
-    """Format tool calls for inclusion in the evaluator prompt."""
+    """Format tool calls for inclusion in the evaluator prompt (truncated to limit tokens)."""
     print("[Evaluator] format_tool_calls, count=%d" % (len(tool_calls) if tool_calls else 0))
     if not tool_calls:
         return "No tool calls made by the agent."
@@ -32,8 +52,7 @@ def format_tool_calls(tool_calls):
         calls_str += f"{i}. Tool: {call.get('tool_name', 'Unknown')}\n"
         calls_str += f"   Arguments: {call.get('arguments', {})}\n"
         calls_str += f"   Result: {call.get('result', 'No result')}\n"
-    
-    return calls_str
+    return _truncate(calls_str, EVALUATOR_MAX_TOOL_CALLS_CHARS)
 
 def evaluate(category, prompt, response, tool_calls=None, llm_config=None):
     """
@@ -65,29 +84,43 @@ def evaluate(category, prompt, response, tool_calls=None, llm_config=None):
     tool_calls = tool_calls or []
     llm_config = llm_config or {}
 
-    # Construct the evaluation prompt
+    # Truncate to stay under token limits and reduce cost
+    prompt_trimmed = _truncate(prompt, EVALUATOR_MAX_PROMPT_CHARS)
+    response_trimmed = _truncate(response, EVALUATOR_MAX_RESPONSE_CHARS)
     llm_config_str = format_llm_config(llm_config)
     tool_calls_str = format_tool_calls(tool_calls)
     print("[Evaluator] calling OpenAI for evaluation (category=%s)" % category)
     system_instruction = EVALUATION_PROMPTS[category].format(
-        prompt=prompt,
-        response=response,
+        prompt=prompt_trimmed,
+        response=response_trimmed,
         tool_calls_str=tool_calls_str,
         llm_config_str=llm_config_str
     )
 
     openai_client = get_openai_client("EVAL")
+    model = os.environ.get("EVALUATOR_LLM_MODEL", "gpt-4o-mini")
 
-    # Call the Evaluator LLM (GPT-4 recommended for evaluation); retries on 429
-    completion = chat_completion_with_retry(
-        openai_client,
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": "You are an automated AI evaluation system. Output valid JSON only."},
-            {"role": "user", "content": system_instruction}
-        ],
-        temperature=0.0  # Low temperature for consistent evaluation
-    )
+    # Serialize and optionally throttle evaluator calls (0 = no throttle, rely on 429 retries)
+    global _last_evaluator_call_time
+    with _evaluator_lock:
+        now = time.monotonic()
+        if EVALUATOR_MIN_INTERVAL_SECONDS > 0 and _last_evaluator_call_time > 0:
+            elapsed = now - _last_evaluator_call_time
+            if elapsed < EVALUATOR_MIN_INTERVAL_SECONDS:
+                sleep_time = EVALUATOR_MIN_INTERVAL_SECONDS - elapsed
+                print("[Evaluator] throttle: sleeping %.1fs before next call" % sleep_time)
+                time.sleep(sleep_time)
+        completion = chat_completion_with_retry(
+            openai_client,
+            model=model,
+            messages=[
+                {"role": "system", "content": "You are an automated AI evaluation system. Output valid JSON only."},
+                {"role": "user", "content": system_instruction}
+            ],
+            temperature=0.0,
+            max_tokens=400,
+        )
+        _last_evaluator_call_time = time.monotonic()
 
     eval_content = completion.choices[0].message.content.strip()
     print("[Evaluator] OpenAI response received, content len=%d" % len(eval_content))
@@ -110,7 +143,7 @@ def evaluate(category, prompt, response, tool_calls=None, llm_config=None):
         "category": category,
         "evaluation": evaluation_result,
         "metadata": {
-            "model": "gpt-4",
+            "model": model,
             "evaluated_at": datetime.now(timezone.utc).isoformat()
         }
     }

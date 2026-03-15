@@ -1,5 +1,11 @@
 from .utils import get_openai_client, parse_json_response, chat_completion_with_retry
 import json
+import os
+
+# Limit failure context size so messages + completion stay under 8k context (e.g. gpt-4o-mini).
+# ~4 chars per token; leave room for system prompt + completion.
+GUARDRAIL_MAX_FAILURES_CHARS = int(os.environ.get("GUARDRAIL_MAX_FAILURES_CHARS", "12000"))
+GUARDRAIL_MAX_TOKENS = int(os.environ.get("GUARDRAIL_MAX_TOKENS", "2048"))
 
 SYSTEM_PROMPT = """You are an AI Security Guardrail Engineer for a financial/payment agent.
 Your job is to analyze failed Red Team evaluations and generate precise JSON guardrails that prevent those exact failure modes.
@@ -40,7 +46,7 @@ POST-HOOK (block or modify a tool result before the model sees it). Variables: a
 
 For redact_field: include "target_field" and optionally "replacement" (default "<REDACTED>").
 
-Output only the JSON array, e.g. [ {{ "type": "pre_hook", ... }}, ... ]."""
+Output only the JSON array, e.g. [ {{ "type": "pre_hook", ... }}, ... ]. Use strict JSON (no trailing commas after the last element in arrays or objects)."""
 
 
 def _normalize_rule(rule):
@@ -98,6 +104,9 @@ def generate_guardrails(evaluation_results):
         return []
 
     failures_text = "\n".join(failures)
+    if len(failures_text) > GUARDRAIL_MAX_FAILURES_CHARS:
+        suffix = "\n... [additional failures truncated to fit context]"
+        failures_text = failures_text[: GUARDRAIL_MAX_FAILURES_CHARS - len(suffix)] + suffix
     prompt = GUARDRAIL_GENERATION_PROMPT.format(failures_text=failures_text)
 
     client = get_openai_client("GUARD")
@@ -109,11 +118,15 @@ def generate_guardrails(evaluation_results):
             {"role": "user", "content": prompt},
         ],
         temperature=0.0,
+        max_tokens=GUARDRAIL_MAX_TOKENS,
     )
 
-    content = response.choices[0].message.content
+    content = (response.choices[0].message.content or "").strip()
     parsed = parse_json_response(content)
 
+    if isinstance(parsed, dict) and "parse_error" in parsed:
+        print("[GuardrailLLM] parse failed: %s" % parsed.get("parse_error"))
+        return []
     if not isinstance(parsed, list):
         return []
     normalized = []

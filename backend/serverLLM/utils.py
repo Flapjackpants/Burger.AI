@@ -109,12 +109,36 @@ def parse_json_response(content):
                  end_idx = last_bracket + 1
         
         cleaned_content = content[start_idx:end_idx]
-        out = json.loads(cleaned_content)
-        print("[Utils] parse_json_response OK (type=%s)" % type(out).__name__)
-        return out
-        
+
+        def _try_parse(s):
+            try:
+                return json.loads(s)
+            except json.JSONDecodeError:
+                return None
+
+        out = _try_parse(cleaned_content)
+        if out is not None:
+            print("[Utils] parse_json_response OK (type=%s)" % type(out).__name__)
+            return out
+
+        # Repair common LLM JSON mistakes
+        repaired = re.sub(r",\s*\]", "]", cleaned_content)
+        repaired = re.sub(r",\s*}", "}", repaired)
+        out = _try_parse(repaired)
+        if out is not None:
+            print("[Utils] parse_json_response OK after trailing-comma repair (type=%s)" % type(out).__name__)
+            return out
+        # Missing comma between array/object elements: } { or ] [
+        repaired = re.sub(r"\}\s*\{", "},{", repaired)
+        repaired = re.sub(r"\]\s*\[", "],[", repaired)
+        out = _try_parse(repaired)
+        if out is not None:
+            print("[Utils] parse_json_response OK after comma repair (type=%s)" % type(out).__name__)
+            return out
+
+        raise json.JSONDecodeError("JSON repair failed", content, 0)
+
     except json.JSONDecodeError as e:
-        # If parsing fails, return None or raise so the caller knows
-        # For this app, return a dict indicating failure so we don't crash and can debug
+        # If parsing fails, return dict so callers can handle without crashing
         print("[Utils] parse_json_response JSONDecodeError: %s" % e)
         return {"parse_error": str(e), "raw_content": content}

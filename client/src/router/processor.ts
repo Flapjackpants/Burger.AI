@@ -1,4 +1,5 @@
-const BASE_URL = import.meta.env.VITE_LOCAL_SERVER_ROUTE;
+const BASE_URL =
+  import.meta.env.VITE_LOCAL_SERVER_ROUTE ?? "http://127.0.0.1:5001";
 import type { LLMConfig } from "../types/types";
 import type { EvaluationResult, GuardrailRule } from "../types/stream";
 
@@ -19,14 +20,23 @@ export interface SSEOptions {
 export async function generateGuardrails(
   failedResults: EvaluationResult[],
 ): Promise<GuardrailRule[]> {
-  const response = await fetch(BASE_URL + "/generate-guardrails", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ failed_results: failedResults }),
-  });
-  if (!response.ok) return [];
-  const data = (await response.json()) as { guardrails?: GuardrailRule[] };
-  return Array.isArray(data.guardrails) ? data.guardrails : [];
+  try {
+    const response = await fetch(BASE_URL + "/generate-guardrails", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ failed_results: failedResults }),
+    });
+    if (!response.ok) return [];
+    const data = (await response.json()) as { guardrails?: GuardrailRule[] };
+    return Array.isArray(data.guardrails) ? data.guardrails : [];
+  } catch (e) {
+    const errMsg = e instanceof Error ? e.message : String(e);
+    const isNetworkErr = /fetch|network|loaded|connection|refused/i.test(errMsg);
+    const msg = isNetworkErr
+      ? `Cannot reach backend at ${BASE_URL}. Is it running?`
+      : errMsg || "Failed to generate guardrails";
+    throw new Error(msg);
+  }
 }
 
 /**

@@ -19,18 +19,22 @@ CLIENT_PID=""
 cleanup() {
   echo ""
   echo "[run-all] Shutting down..."
+  # Kill process groups (negative PID) so child processes (python, node) are stopped too.
   if [[ -n "$CLIENT_PID" ]] && kill -0 "$CLIENT_PID" 2>/dev/null; then
-    kill -9 "$CLIENT_PID" 2>/dev/null || true
+    kill -9 -"$CLIENT_PID" 2>/dev/null || kill -9 "$CLIENT_PID" 2>/dev/null || true
     echo "[run-all] Client (PID $CLIENT_PID) stopped."
   fi
   if [[ -n "$BACKEND_PID" ]] && kill -0 "$BACKEND_PID" 2>/dev/null; then
-    kill -9 "$BACKEND_PID" 2>/dev/null || true
+    kill -9 -"$BACKEND_PID" 2>/dev/null || kill -9 "$BACKEND_PID" 2>/dev/null || true
     echo "[run-all] Backend (PID $BACKEND_PID) stopped."
   fi
   if [[ -n "$AGENTS_PID" ]] && kill -0 "$AGENTS_PID" 2>/dev/null; then
-    kill -9 "$AGENTS_PID" 2>/dev/null || true
+    kill -9 -"$AGENTS_PID" 2>/dev/null || kill -9 "$AGENTS_PID" 2>/dev/null || true
     echo "[run-all] Agents (PID $AGENTS_PID) stopped."
   fi
+  # Ensure nothing is left on our ports (handles orphaned children)
+  lsof -ti:5001 | xargs kill -9 2>/dev/null || true
+  lsof -ti:5002 | xargs kill -9 2>/dev/null || true
   exit 0
 }
 trap cleanup INT TERM

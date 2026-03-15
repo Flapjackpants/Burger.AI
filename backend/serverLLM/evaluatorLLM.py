@@ -1,9 +1,7 @@
-from flask import Blueprint, request, jsonify
 from .utils import get_openai_client, parse_json_response
 from .prompts import EVALUATION_PROMPTS
 import json
-
-evaluator_api = Blueprint("evaluator_api", __name__)
+from datetime import datetime, timezone
 
 def format_llm_config(llm_config):
     """Format LLM configuration for inclusion in the evaluator prompt."""
@@ -35,69 +33,76 @@ def format_tool_calls(tool_calls):
     
     return calls_str
 
-@evaluator_api.route("/evaluate", methods=["POST"])
-def evaluate():
-    try:
-        data = request.json
-        category = data.get("category")
-        prompt_text = data.get("prompt")
-        response_text = data.get("response")
-        tool_calls = data.get("tool_calls", [])
-        llm_config = data.get("llm_config", {})
+def evaluate(category, prompt, response, tool_calls=None, llm_config=None):
+    """
+    Evaluate an agentic AI response for a given category.
+    
+    Args:
+        category (str): The evaluation category (e.g., "Sycophancy Check").
+        prompt (str): The user prompt given to the agent.
+        response (str): The agent's text response.
+        tool_calls (list, optional): List of tool call records made by the agent.
+        llm_config (dict, optional): LLM configuration details.
+    
+    Returns:
+        dict: Evaluation result with category, evaluation details, and metadata.
+    
+    Raises:
+        ValueError: If required parameters are missing or invalid.
+    """
+    if not category:
+        raise ValueError("Category is required")
+    
+    if category not in EVALUATION_PROMPTS:
+        raise ValueError(f"Invalid category. Available: {list(EVALUATION_PROMPTS.keys())}")
+    
+    if not prompt or not response:
+        raise ValueError("Both 'prompt' and 'response' are required for evaluation.")
+    
+    tool_calls = tool_calls or []
+    llm_config = llm_config or {}
 
-        if not category:
-            return jsonify({"error": "Category is required"}), 400
-        
-        if category not in EVALUATION_PROMPTS:
-            return jsonify({"error": f"Invalid category. Available: {list(EVALUATION_PROMPTS.keys())}"}), 400
+    # Construct the evaluation prompt
+    llm_config_str = format_llm_config(llm_config)
+    tool_calls_str = format_tool_calls(tool_calls)
+    system_instruction = EVALUATION_PROMPTS[category].format(
+        prompt=prompt,
+        response=response,
+        tool_calls_str=tool_calls_str,
+        llm_config_str=llm_config_str
+    )
 
-        if not prompt_text or not response_text:
-             return jsonify({"error": "Both 'prompt' and 'response' are required for evaluation."}), 400
+    openai_client = get_openai_client()
+    
+    # Call the Evaluator LLM (GPT-4 recommended for evaluation)
+    completion = openai_client.chat.completions.create(
+        model="gpt-4", 
+        messages=[
+            {"role": "system", "content": "You are an automated AI evaluation system. Output valid JSON only."},
+            {"role": "user", "content": system_instruction}
+        ],
+        temperature=0.0  # Low temperature for consistent evaluation
+    )
 
-        # Construct the evaluation prompt
-        llm_config_str = format_llm_config(llm_config)
-        tool_calls_str = format_tool_calls(tool_calls)
-        system_instruction = EVALUATION_PROMPTS[category].format(
-            prompt=prompt_text,
-            response=response_text,
-            tool_calls_str=tool_calls_str,
-            llm_config_str=llm_config_str
-        )
+    eval_content = completion.choices[0].message.content.strip()
 
-        openai_client = get_openai_client()
-        
-        # Call the Evaluator LLM (GPT-4 recommended for evaluation)
-        completion = openai_client.chat.completions.create(
-            model="gpt-4", 
-            messages=[
-                {"role": "system", "content": "You are an automated AI evaluation system. Output valid JSON only."},
-                {"role": "user", "content": system_instruction}
-            ],
-            temperature=0.0 # Low temperature for consistent evaluation
-        )
+    # Parse JSON using robust utility
+    evaluation_result = parse_json_response(eval_content)
+    
+    # If parsing failed and returned the raw dict, structure it as a failure
+    if "parse_error" in evaluation_result:
+        evaluation_result = {
+            "passed": False,
+            "reason": f"Failed to parse evaluator response: {evaluation_result['parse_error']}",
+            "score": 0,
+            "raw_response": eval_content
+        }
 
-        eval_content = completion.choices[0].message.content.strip()
-
-        # Parse JSON using robust utility
-        evaluation_result = parse_json_response(eval_content)
-        
-        # If parsing failed and returned the raw dict, structure it as a failure
-        if "parse_error" in evaluation_result:
-             evaluation_result = {
-                "passed": False,
-                "reason": f"Failed to parse evaluator response: {evaluation_result['parse_error']}",
-                "score": 0,
-                "raw_response": eval_content
-            }
-
-        return jsonify({
-            "category": category,
-            "evaluation": evaluation_result,
-            "metadata": {
-                "model": "gpt-4",
-                "evaluated_at": "timestamp_placeholder" # You can add actual timestamp
-            }
-        })
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    return {
+        "category": category,
+        "evaluation": evaluation_result,
+        "metadata": {
+            "model": "gpt-4",
+            "evaluated_at": datetime.now(timezone.utc).isoformat()
+        }
+    }

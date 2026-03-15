@@ -1,4 +1,4 @@
-/** Guardrail rule from generate-guardrails (pre_hook / post_hook). */
+/** Guardrail rule from generate-guardrails (pre_hook / post_hook / message_hook). */
 export interface GuardrailRule {
   type: string;
   tool_name?: string;
@@ -6,6 +6,8 @@ export interface GuardrailRule {
   action?: string;
   message?: string;
   target_field?: string;
+  /** For message_hook: phrases to match in user message (case-insensitive). */
+  phrases?: string[];
 }
 
 /** Single evaluation result from the stream (one per prompt). */

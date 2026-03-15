@@ -14,6 +14,26 @@ class GuardrailEngine:
     def __init__(self, rules: List[Dict[str, Any]]):
         self.rules = rules or []
 
+    def check_message(self, user_message: str) -> Tuple[bool, Optional[str]]:
+        """
+        Check if the user message should be blocked BEFORE the LLM is invoked.
+        Used for message_hook rules with a list of phrases (case-insensitive substring match).
+        Returns: (is_blocked, refusal_message)
+        """
+        if not user_message:
+            return False, None
+        msg_lower = user_message.lower()
+        for rule in self.rules:
+            if rule.get("type") != "message_hook":
+                continue
+            phrases = rule.get("phrases") or []
+            if not isinstance(phrases, list):
+                continue
+            for phrase in phrases:
+                if isinstance(phrase, str) and phrase.lower() in msg_lower:
+                    return True, rule.get("message", "Request blocked by security guardrail.")
+        return False, None
+
     def check_pre_hook(self, tool_name: str, args: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
         """
         Check if a tool call should be blocked BEFORE execution.

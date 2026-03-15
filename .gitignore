@@ -44,6 +44,7 @@ htmlcov/
 
 dist/
 build/
+burger-ai-client.zip
 *.egg-info/
 
 # Jupyter notebooks

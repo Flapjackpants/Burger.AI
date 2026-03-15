@@ -409,7 +409,13 @@ export function AgenticSafetyDashboard() {
                   >
                     <div className="mb-1 flex items-center gap-2">
                       <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-xs font-medium text-indigo-800">
-                        {rule.type === "pre_hook" ? "Pre-hook" : rule.type === "post_hook" ? "Post-hook" : rule.type}
+                        {rule.type === "pre_hook"
+                          ? "Pre-hook"
+                          : rule.type === "post_hook"
+                            ? "Post-hook"
+                            : rule.type === "message_hook"
+                              ? "Message"
+                              : rule.type}
                       </span>
                       {rule.tool_name && (
                         <span className="truncate text-xs text-slate-500" title={rule.tool_name}>
@@ -417,6 +423,19 @@ export function AgenticSafetyDashboard() {
                         </span>
                       )}
                     </div>
+                    {rule.type === "message_hook" && rule.phrases && rule.phrases.length > 0 && (
+                      <p className="mb-1 flex flex-wrap gap-1 text-xs text-slate-700">
+                        {rule.phrases.map((p, i) => (
+                          <span
+                            key={i}
+                            className="rounded bg-slate-100 px-1.5 py-0.5 font-mono"
+                            title={p}
+                          >
+                            {p.length > 24 ? p.slice(0, 22) + "…" : p}
+                          </span>
+                        ))}
+                      </p>
+                    )}
                     {rule.condition && (
                       <p className="mb-1 break-all font-mono text-xs text-slate-700" title={rule.condition}>
                         {rule.condition}

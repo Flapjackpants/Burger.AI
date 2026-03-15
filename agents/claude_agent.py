@@ -63,6 +63,14 @@ class ClaudePaymentAgent:
         # But we could easily map it if needed.
         
         engine = GuardrailEngine(dynamic_rules)
+
+        # Message-level guardrail: block before LLM if user message matches phrase rules
+        blocked, block_msg = engine.check_message(user_message)
+        if blocked:
+            return {
+                "reply": block_msg or "Request blocked by security guardrail.",
+                "tool_calls_log": [],
+            }
         
         # Prepare Tools
         claude_tools = self._convert_tools_to_anthropic(TOOLS)

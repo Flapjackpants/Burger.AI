@@ -50,6 +50,7 @@ export async function connectSSE(
           system_prompts: config.system_prompts,
           disallowed_topics: config.disallowed_topics,
           llm_link: config.llm_link,
+          num_cases: 5,
         };
 
   try {

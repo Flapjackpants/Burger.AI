@@ -33,22 +33,26 @@ const CATEGORIES = [
   "Advanced Jailbreak",
 ];
 
+const AGENT_BASE = "http://127.0.0.1:5002";
+const LLM_LINK_OPENAI = `${AGENT_BASE}/prompt`;
+const LLM_LINK_CLAUDE = `${AGENT_BASE}/claude`;
+
 const defaultConfig: LLMConfig = {
   personality_statement: "You are a helpful assistant",
   description: "A test chatbot",
   system_prompts: [],
   disallowed_topics: [],
-  llm_link: "http://127.0.0.1:5002",
+  llm_link: LLM_LINK_OPENAI,
 };
 
-const defaultParamsJson = `{
-  "behavior": "You are a helpful assistant",
-  "description": "A test chatbot",
-  "system_prompts": [],
-  "disallowed_topics": [],
-  "llm_link": "http://127.0.0.1:5002",
-  "num_cases": 5
-}`;
+type AgentChoice = "openai" | "claude" | "custom";
+
+function parseLines(s: string): string[] {
+  return s
+    .split(/\n/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
 
 function SubparSection({
   results,
@@ -81,9 +85,16 @@ export function AgenticSafetyDashboard() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [status, setStatus] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
-  const [paramsJson, setParamsJson] = useState<string>(defaultParamsJson);
+  const [behavior, setBehavior] = useState("You are a helpful assistant");
+  const [description, setDescription] = useState("A test chatbot");
+  const [systemPromptsStr, setSystemPromptsStr] = useState("");
+  const [disallowedTopicsStr, setDisallowedTopicsStr] = useState("");
+  const [numCases, setNumCases] = useState(5);
+  const [agentChoice, setAgentChoice] = useState<AgentChoice>("openai");
+  const [customLlmLink, setCustomLlmLink] = useState("");
   const [paramsOpen, setParamsOpen] = useState(false);
   const [paramsError, setParamsError] = useState<string | null>(null);
+  const [showAdvancedJson, setShowAdvancedJson] = useState(false);
   const [guardrails, setGuardrails] = useState<GuardrailRule[] | null>(null);
   const [guardrailsLoading, setGuardrailsLoading] = useState(false);
   const [guardrailsError, setGuardrailsError] = useState<string | null>(null);
@@ -104,24 +115,35 @@ export function AgenticSafetyDashboard() {
     }
   }, []);
 
+  const getLlmLink = useCallback((): string => {
+    if (agentChoice === "claude") return LLM_LINK_CLAUDE;
+    if (agentChoice === "custom") return customLlmLink.trim() || LLM_LINK_OPENAI;
+    return LLM_LINK_OPENAI;
+  }, [agentChoice, customLlmLink]);
+
   const startEvaluation = useCallback(() => {
     setError(null);
     setParamsError(null);
     setStatus("Connecting…");
     setResults([]);
-    let body: Record<string, unknown> | undefined;
-    const trimmed = paramsJson.trim();
-    if (trimmed) {
-      try {
-        const parsed = JSON.parse(trimmed) as Record<string, unknown>;
-        body = parsed;
-      } catch {
-        setParamsError("Invalid JSON. Fix the parameters or clear the box to use defaults.");
-        return;
-      }
+    const num = Number(numCases);
+    if (Number.isNaN(num) || num < 1 || num > 50) {
+      setParamsError("Num cases must be between 1 and 50.");
+      return;
     }
+    const system_prompts = parseLines(systemPromptsStr);
+    const disallowed_topics = parseLines(disallowedTopicsStr);
+    const llm_link = getLlmLink();
+    let body: Record<string, unknown> = {
+      behavior: behavior.trim() || defaultConfig.personality_statement,
+      description: description.trim() || defaultConfig.description,
+      system_prompts,
+      disallowed_topics,
+      num_cases: num,
+      llm_link,
+    };
     if (guardrails != null && guardrails.length > 0) {
-      body = { ...(body ?? {}), guardrails };
+      body = { ...body, guardrails };
     }
     connectSSE(defaultConfig, {
       onMessage,
@@ -139,7 +161,7 @@ export function AgenticSafetyDashboard() {
     }, body).then((disconnect) => {
       disconnectRef.current = disconnect;
     });
-  }, [onMessage, paramsJson, guardrails]);
+  }, [onMessage, behavior, description, systemPromptsStr, disallowedTopicsStr, numCases, getLlmLink, guardrails]);
 
   const stopEvaluation = useCallback(() => {
     disconnectRef.current?.();
@@ -234,22 +256,130 @@ export function AgenticSafetyDashboard() {
         {paramsOpen && (
           <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6">
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <p className="mb-2 text-sm font-medium text-slate-700">
-                Request body for POST /stream (paste JSON the backend accepts)
-              </p>
-              <p className="mb-2 text-xs text-slate-500">
-                Keys: behavior, description, system_prompts, disallowed_topics, llm_link, num_cases — or nested llm_config.
-              </p>
-              <textarea
-                value={paramsJson}
-                onChange={(e) => setParamsJson(e.target.value)}
-                placeholder={defaultParamsJson}
-                rows={8}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
-              {paramsError && (
-                <p className="mt-2 text-sm text-red-600">{paramsError}</p>
-              )}
+              <h3 className="mb-3 text-sm font-semibold text-slate-800">Evaluation parameters</h3>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label className="mb-1 block text-xs font-medium text-slate-600">Behavior (personality statement)</label>
+                  <input
+                    type="text"
+                    value={behavior}
+                    onChange={(e) => setBehavior(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    placeholder="You are a helpful assistant"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="mb-1 block text-xs font-medium text-slate-600">Description</label>
+                  <input
+                    type="text"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    placeholder="A test chatbot"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-600">System prompts (one per line)</label>
+                  <textarea
+                    value={systemPromptsStr}
+                    onChange={(e) => setSystemPromptsStr(e.target.value)}
+                    rows={3}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    placeholder="Optional, one per line"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-600">Disallowed topics (one per line)</label>
+                  <textarea
+                    value={disallowedTopicsStr}
+                    onChange={(e) => setDisallowedTopicsStr(e.target.value)}
+                    rows={3}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    placeholder="Optional, one per line"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-600">Num cases</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={numCases}
+                    onChange={(e) => setNumCases(Number(e.target.value) || 5)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-xs font-medium text-slate-600">Link to LLM / Agent</label>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="agent"
+                        checked={agentChoice === "openai"}
+                        onChange={() => setAgentChoice("openai")}
+                        className="text-indigo-600"
+                      />
+                      <span className="text-sm text-slate-700">OpenAI payment agent</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="agent"
+                        checked={agentChoice === "claude"}
+                        onChange={() => setAgentChoice("claude")}
+                        className="text-indigo-600"
+                      />
+                      <span className="text-sm text-slate-700">Claude agent</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="agent"
+                        checked={agentChoice === "custom"}
+                        onChange={() => setAgentChoice("custom")}
+                        className="text-indigo-600"
+                      />
+                      <span className="text-sm text-slate-700">Custom URL</span>
+                    </label>
+                    {agentChoice === "custom" && (
+                      <input
+                        type="url"
+                        value={customLlmLink}
+                        onChange={(e) => setCustomLlmLink(e.target.value)}
+                        placeholder="https://host:port/prompt or /claude"
+                        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+              {paramsError && <p className="mt-2 text-sm text-red-600">{paramsError}</p>}
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvancedJson((v) => !v)}
+                  className="text-xs font-medium text-slate-500 hover:text-slate-700"
+                >
+                  {showAdvancedJson ? "Hide" : "Show"} JSON payload
+                </button>
+                {showAdvancedJson && (
+                  <pre className="mt-2 overflow-auto rounded-lg border border-slate-200 bg-white p-2 font-mono text-xs text-slate-700">
+                    {JSON.stringify(
+                      {
+                        behavior: behavior.trim() || defaultConfig.personality_statement,
+                        description: description.trim() || defaultConfig.description,
+                        system_prompts: parseLines(systemPromptsStr),
+                        disallowed_topics: parseLines(disallowedTopicsStr),
+                        num_cases: Number(numCases) || 5,
+                        llm_link: getLlmLink(),
+                      },
+                      null,
+                      2
+                    )}
+                  </pre>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -272,7 +402,7 @@ export function AgenticSafetyDashboard() {
                 Proposed guardrails ({guardrails.length})
               </h3>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {guardrails.slice(0, 4).map((rule, idx) => (
+                {guardrails.map((rule, idx) => (
                   <div
                     key={idx}
                     className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
@@ -288,7 +418,7 @@ export function AgenticSafetyDashboard() {
                       )}
                     </div>
                     {rule.condition && (
-                      <p className="mb-1 truncate font-mono text-xs text-slate-700" title={rule.condition}>
+                      <p className="mb-1 break-all font-mono text-xs text-slate-700" title={rule.condition}>
                         {rule.condition}
                       </p>
                     )}
@@ -298,7 +428,7 @@ export function AgenticSafetyDashboard() {
                       </p>
                     )}
                     {rule.message && (
-                      <p className="mt-1 truncate text-xs text-slate-500" title={rule.message}>
+                      <p className="mt-1 break-words text-xs text-slate-500" title={rule.message}>
                         {rule.message}
                       </p>
                     )}
@@ -310,11 +440,6 @@ export function AgenticSafetyDashboard() {
                   </div>
                 ))}
               </div>
-              {guardrails.length > 4 && (
-                <p className="mt-2 text-xs text-slate-500">
-                  Showing 4 of {guardrails.length} guardrails. All {guardrails.length} are applied when you run evaluation.
-                </p>
-              )}
             </div>
           </div>
         )}

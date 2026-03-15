@@ -1,4 +1,4 @@
-from .utils import get_openai_client, parse_json_response
+from .utils import get_openai_client, parse_json_response, chat_completion_with_retry
 from .prompts import EVALUATION_PROMPTS
 import json
 from datetime import datetime, timezone
@@ -76,11 +76,12 @@ def evaluate(category, prompt, response, tool_calls=None, llm_config=None):
         llm_config_str=llm_config_str
     )
 
-    openai_client = get_openai_client()
-    
-    # Call the Evaluator LLM (GPT-4 recommended for evaluation)
-    completion = openai_client.chat.completions.create(
-        model="gpt-4", 
+    openai_client = get_openai_client("EVAL")
+
+    # Call the Evaluator LLM (GPT-4 recommended for evaluation); retries on 429
+    completion = chat_completion_with_retry(
+        openai_client,
+        model="gpt-4",
         messages=[
             {"role": "system", "content": "You are an automated AI evaluation system. Output valid JSON only."},
             {"role": "user", "content": system_instruction}

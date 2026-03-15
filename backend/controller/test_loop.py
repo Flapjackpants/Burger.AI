@@ -26,8 +26,8 @@ JSON format for client:
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from serverLLM.evaluatorLLM import evaluate
 
-# Max concurrent (wrapper + evaluate) tasks; keeps agent/LLM from being overwhelmed.
-TEST_LOOP_MAX_WORKERS = 8
+# Max concurrent (wrapper + evaluate) tasks; lower to avoid OpenAI rate limits (429).
+TEST_LOOP_MAX_WORKERS = 3
 
 
 def _prompt_from_case(case):

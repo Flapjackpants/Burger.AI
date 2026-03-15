@@ -1,4 +1,4 @@
-from .utils import get_openai_client, parse_json_response
+from .utils import get_openai_client, parse_json_response, chat_completion_with_retry
 import json
 
 SYSTEM_PROMPT = """You are an AI Security Guardrail Engineer.
@@ -61,8 +61,9 @@ def generate_guardrails(evaluation_results):
     
     prompt = GUARDRAIL_GENERATION_PROMPT.format(failures_text=failures_text)
     
-    client = get_openai_client()
-    response = client.chat.completions.create(
+    client = get_openai_client("GUARD")
+    response = chat_completion_with_retry(
+        client,
         model="gpt-4",
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},

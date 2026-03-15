@@ -55,7 +55,8 @@ def composeData(request=None):
     print("[Pipeline] get_categories -> %d categories (parallel generation)" % len(categories))
 
     red_team_cases = {}
-    max_workers = min(len(categories) + 1, 8)  # +1 so generic_tests can run alongside
+    # Cap concurrency to avoid OpenAI TPM rate limits (429)
+    max_workers = min(len(categories) + 1, 3)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_generic = executor.submit(get_generic_tests, None, llm_config)
         futures_red = {

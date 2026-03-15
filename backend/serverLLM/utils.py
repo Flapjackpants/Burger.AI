@@ -1,15 +1,60 @@
 from openai import OpenAI
 import os
 import json
+import re
+import time
 
 # Sync client: redTeamLLM uses .create() without await
 client = None
 
-def get_openai_client():
+# Retry config for rate limits (429)
+OPENAI_RETRY_MAX_ATTEMPTS = 5
+OPENAI_RETRY_BASE_SECONDS = 2
+OPENAI_RETRY_MAX_SECONDS = 60
+
+
+def _is_rate_limit_error(e):
+    """True if the exception is a 429 / rate limit error."""
+    err_str = str(e).lower()
+    if "429" in err_str or "rate_limit" in err_str or "rate limit" in err_str:
+        return True
+    return getattr(e, "status_code", None) == 429
+
+
+def _parse_retry_after_ms(e):
+    """Parse 'Please try again in Xms' from error message; return seconds or None."""
+    m = re.search(r"try again in (\d+)ms", str(e), re.I)
+    if m:
+        return max(1, int(m.group(1)) / 1000.0)
+    return None
+
+
+def chat_completion_with_retry(client, **kwargs):
+    """
+    Call client.chat.completions.create(**kwargs) with retry on 429 rate limit.
+    Uses retry-after from error message when present, else exponential backoff.
+    """
+    last_error = None
+    for attempt in range(1, OPENAI_RETRY_MAX_ATTEMPTS + 1):
+        try:
+            return client.chat.completions.create(**kwargs)
+        except Exception as e:
+            last_error = e
+            if not _is_rate_limit_error(e) or attempt >= OPENAI_RETRY_MAX_ATTEMPTS:
+                raise
+            wait = _parse_retry_after_ms(e)
+            if wait is None:
+                wait = min(OPENAI_RETRY_MAX_SECONDS, OPENAI_RETRY_BASE_SECONDS * (2 ** (attempt - 1)))
+            print("[Utils] Rate limit (429); retry %d/%d in %.1fs: %s" % (attempt, OPENAI_RETRY_MAX_ATTEMPTS, wait, str(e)[:120]))
+            time.sleep(wait)
+    raise last_error
+
+
+def get_openai_client(llm_type):
     global client
     print("[Utils] get_openai_client")
     if client is None:
-        api_key = os.getenv("OPENAI_API_KEY")
+        api_key = os.getenv("OPENAI_API_KEY_" + llm_type)
         if not api_key:
             print("[Utils] Warning: OPENAI_API_KEY not found in environment variables.")
         client = OpenAI(api_key=api_key) if api_key else OpenAI()

@@ -33,6 +33,7 @@ def main():
             amount=amount_cents,
             currency="usd",
             automatic_payment_methods={"enabled": True, "allow_redirects": "never"},
+            capture_method="automatic",
             description="Test balance funding",
         )
         if getattr(pi, "livemode", True):
@@ -42,8 +43,13 @@ def main():
             pi.id,
             payment_method="pm_card_visa",
         )
-        print(f"Done. ${amount_dollars:.2f} was charged to a test card and added to your balance.")
-        print("Check Dashboard → Balance (test mode) or run:  python -m agents.check_balance")
+        print(f"Done. ${amount_dollars:.2f} was charged and added to your balance (you'll see it under Incoming/Pending).")
+        print("")
+        print("To get funds into 'Available' (not just Incoming):")
+        print("  1. Dashboard → Settings → Payouts")
+        print("  2. Check 'Payout schedule' and, if offered, 'Next-day settlement' or faster settlement.")
+        print("  3. In test mode, Available may stay $0; Stripe often keeps test funds in Pending.")
+        print("  Run:  python -m agents.check_balance")
         return 0
     except stripe.error.StripeError as e:
         print(f"Stripe error: {e}")

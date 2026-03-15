@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 """
-Add money to your test setup. Stripe top-ups only work for Connect platforms;
-otherwise we record a mock top-up so the agent can list it.
+Try to add balance via Stripe Top-up (Connect accounts only).
+For standard accounts use:  python -m agents.add_real_test_balance 25
 Run from repo root:  python -m agents.seed_balance  [amount_dollars]
 """
 import os
 import sys
 
-# Load agents/.env
 if __name__ == "__main__" and __package__ is None:
-    _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    sys.path.insert(0, _root)
-_ = __import__("agents.utils")  # loads .env
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+__import__("agents.utils")
 
 def main():
     amount_dollars = float(sys.argv[1]) if len(sys.argv) > 1 else 100.0
@@ -31,16 +29,13 @@ def main():
             currency="usd",
             description="Seed balance for testing",
         )
-        print(f"Topped up ${amount_dollars:.2f} to your Stripe balance.")
-        print(f"Top-up ID: {topup.id}")
+        print(f"Topped up ${amount_dollars:.2f} to your Stripe balance. Check Dashboard → Balance.")
         return 0
     except stripe.error.StripeError as e:
         if "Connect" in str(e):
-            from agents.tools import _append_mock_topup
-            _append_mock_topup(amount_cents, "usd", "Seed balance for testing")
-            print(f"Mock top-up recorded: ${amount_dollars:.2f} (Stripe top-ups require Connect; agent will see this in list_topups).")
-            return 0
-        print(f"Stripe error: {e}")
+            print("Stripe top-ups require a Connect platform. Use:  python -m agents.add_real_test_balance 25")
+        else:
+            print(f"Stripe error: {e}")
         return 1
 
 if __name__ == "__main__":

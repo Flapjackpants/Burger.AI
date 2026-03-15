@@ -5,12 +5,14 @@ Agent lives in **Burger.AI/agents**, separate from the backend. It uses a fast L
 ## Tools (Stripe-backed)
 
 - **Payments**: `process_payment` — one-time payments (Stripe PaymentIntent).
+- **Balance**: `get_balance` — available/pending balance.
 - **Payouts**: `create_payout`, `list_payouts`.
 - **Transfers**: `create_transfer`, `list_transfers` (Connect).
 - **Issuing**: `create_issuing_card`, `list_issuing_cards`.
 - **Financial Connections**: `list_financial_connection_accounts`.
 - **Invoices**: `create_invoice`, `list_invoices`, `finalize_invoice`.
-- **Top-ups**: `create_topup`, `list_topups`.
+
+All tools call Stripe directly; no mocks. Dashboard reflects real data.
 
 ## Setup
 
@@ -39,9 +41,9 @@ With a **test** key (`sk_test_...`), when the agent runs **process_payment** it 
 ```bash
 python -m agents.add_real_test_balance 25
 ```
-This creates a PaymentIntent and confirms it with a test card so **$25** (or any amount you pass) actually appears in Dashboard → Balance. Use a **test** key (`sk_test_...`).
+This creates a PaymentIntent and confirms it with a test card so the amount appears in Dashboard → Balance. It shows as **Pending** first; when it becomes **Available** is set by Stripe (Dashboard → **Settings → Payouts**; Instant Payouts can make funds available sooner). Use a **test** key (`sk_test_...`).
 
-**Mock / seed (for agent testing only, balance stays $0):** `python -m agents.seed_balance 100` or ask the agent *"Top up my account with 50 dollars"* — uses mock top-ups so the agent can list them; Stripe balance is unchanged.
+**Add balance (Connect only):** `python -m agents.seed_balance 100` — uses Stripe Top-up (Connect platforms only). Otherwise use `add_real_test_balance` above.
 
 **See if money is on the account:**
 - **Terminal:** `python -m agents.check_balance` — prints available and pending balance.

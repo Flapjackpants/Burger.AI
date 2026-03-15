@@ -14,4 +14,3 @@ __pycache__/
 .DS_Store
 venv_agent/
 stripes.json
-mock_topups.json

@@ -1,9 +1,7 @@
 """
 Stripe-backed tools for the payment agent: Payouts, Transfers, Issuing Cards,
-Financial Connections, Invoices, and Top-ups. Tool definitions for the LLM and
-executors that call the Stripe API (STRIPE_SECRET_KEY in agents/.env).
-Top-ups: Stripe only allows top-ups for Connect platforms; otherwise we use a
-mock store (agents/mock_topups.json) so you can still test.
+Financial Connections, Invoices. All commands hit the Stripe API directly;
+no mocks (Dashboard reflects real data).
 
 Guardrails (where they live):
 - process_payment: agents/tools.py execute_process_payment() — amount min/max,
@@ -11,9 +9,7 @@ Guardrails (where they live):
 - create_payout: Stripe API + optional checks in run_tool (amount limits in execute_process_payment style if you add them).
 - System prompt: agents/payment_agent.py SYSTEM_PROMPT — when the LLM may call tools (soft guardrail).
 """
-import json
 import os
-import uuid
 from typing import Any
 
 # ---- Guardrails (edit these to tighten or loosen) ----
@@ -25,35 +21,6 @@ PAYMENT_REQUIRE_DESCRIPTION = True
 # Ensure .env is loaded (agents.utils does this on import)
 def _get_stripe_key() -> str | None:
     return os.getenv("STRIPE_SECRET_KEY")
-
-def _mock_topups_path() -> str:
-    return os.path.join(os.path.dirname(__file__), "mock_topups.json")
-
-def _read_mock_topups() -> list[dict]:
-    path = _mock_topups_path()
-    if not os.path.isfile(path):
-        return []
-    try:
-        with open(path) as f:
-            return json.load(f)
-    except Exception:
-        return []
-
-def _append_mock_topup(amount: int, currency: str, description: str | None) -> dict:
-    path = _mock_topups_path()
-    data = _read_mock_topups()
-    entry = {
-        "id": f"mock_topup_{uuid.uuid4().hex[:14]}",
-        "object": "topup",
-        "amount": amount,
-        "currency": currency,
-        "description": description or "Mock top-up (Stripe top-ups require Connect)",
-        "status": "succeeded",
-    }
-    data.insert(0, entry)
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
-    return {"success": True, "data": entry, "mock": True}
 
 def _stripe_call(fn, *args, **kwargs) -> dict[str, Any]:
     """Run a Stripe API call; return {success, data or error}."""
@@ -238,35 +205,6 @@ FINALIZE_INVOICE_TOOL = {
     },
 }
 
-# Top-ups
-CREATE_TOPUP_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "create_topup",
-        "description": "Top up the Stripe account balance. Use when the user wants to add funds to their balance.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "amount": {"type": "integer", "description": "Amount in cents"},
-                "currency": {"type": "string", "description": "Currency code, e.g. usd"},
-                "description": {"type": "string", "description": "Optional description"},
-            },
-            "required": ["amount", "currency"],
-        },
-    },
-}
-LIST_TOPUPS_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "list_topups",
-        "description": "List top-ups to the balance. Use when the user asks about top-up history.",
-        "parameters": {
-            "type": "object",
-            "properties": {"limit": {"type": "integer", "default": 10}},
-        },
-    },
-}
-
 # Balance (see if money is on the account)
 GET_BALANCE_TOOL = {
     "type": "function",
@@ -277,9 +215,26 @@ GET_BALANCE_TOOL = {
     },
 }
 
+# Add test balance (test mode only: charges a test card so funds land in Dashboard)
+ADD_TEST_BALANCE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "add_test_balance",
+        "description": "Add money to the Stripe test account balance by charging a test card. Use when the user wants to add funds, top up, or fund their test balance. Only works in test mode (sk_test_ key). Amount is in dollars.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "amount_dollars": {"type": "number", "description": "Amount in dollars to add (e.g. 25 for $25)"},
+            },
+            "required": ["amount_dollars"],
+        },
+    },
+}
+
 TOOLS = [
     PROCESS_PAYMENT_TOOL,
     GET_BALANCE_TOOL,
+    ADD_TEST_BALANCE_TOOL,
     CREATE_PAYOUT_TOOL,
     LIST_PAYOUTS_TOOL,
     CREATE_TRANSFER_TOOL,
@@ -290,8 +245,6 @@ TOOLS = [
     CREATE_INVOICE_TOOL,
     LIST_INVOICES_TOOL,
     FINALIZE_INVOICE_TOOL,
-    CREATE_TOPUP_TOOL,
-    LIST_TOPUPS_TOOL,
 ]
 
 
@@ -321,6 +274,7 @@ def execute_process_payment(amount: float, currency: str, description: str) -> d
             amount=amount_cents,
             currency=(currency or "usd").lower(),
             automatic_payment_methods={"enabled": True, "allow_redirects": "never"},
+            capture_method="automatic",
             description=(description or "").strip() or None,
         )
         # Only in test mode: complete the payment with a test card so the AI "does" the payment.
@@ -328,6 +282,38 @@ def execute_process_payment(amount: float, currency: str, description: str) -> d
             stripe.PaymentIntent.confirm(pi.id, payment_method="pm_card_visa")
             pi = stripe.PaymentIntent.retrieve(pi.id)
         return {"success": True, "data": pi.to_dict()}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def execute_add_test_balance(amount_dollars: float) -> dict[str, Any]:
+    """
+    Add test balance (same as python -m agents.add_real_test_balance).
+    Creates and confirms a PaymentIntent with a test card. Test mode only.
+    """
+    key = _get_stripe_key()
+    if not key:
+        return {"success": False, "error": "STRIPE_SECRET_KEY not set in agents/.env"}
+    if not key.startswith("sk_test_"):
+        return {"success": False, "error": "add_test_balance only works with a test key (sk_test_...)."}
+    amount_cents = int(round(amount_dollars * 100))
+    if amount_cents < 50:
+        return {"success": False, "error": "Amount must be at least $0.50."}
+    try:
+        import stripe
+        stripe.api_key = key
+        pi = stripe.PaymentIntent.create(
+            amount=amount_cents,
+            currency="usd",
+            automatic_payment_methods={"enabled": True, "allow_redirects": "never"},
+            capture_method="automatic",
+            description="Test balance funding",
+        )
+        if getattr(pi, "livemode", True):
+            return {"success": False, "error": "PaymentIntent is in live mode; use a test key."}
+        stripe.PaymentIntent.confirm(pi.id, payment_method="pm_card_visa")
+        pi = stripe.PaymentIntent.retrieve(pi.id)
+        return {"success": True, "data": pi.to_dict(), "message": f"${amount_dollars:.2f} added to your balance (Incoming/Pending in Dashboard)."}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -399,29 +385,8 @@ def run_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return _stripe_call(
             lambda: __import__("stripe").Invoice.finalize_invoice(str(args.get("invoice_id", "")).strip())
         )
-    if name == "create_topup":
-        amount = int(args.get("amount", 0))
-        currency = (args.get("currency") or "usd").lower()
-        description = args.get("description") or None
-        out = _stripe_call(
-            lambda: __import__("stripe").Topup.create(
-                amount=amount, currency=currency, description=description,
-            )
-        )
-        if not out.get("success") and "Connect" in str(out.get("error", "")):
-            return _append_mock_topup(amount, currency, description)
-        return out
-    if name == "list_topups":
-        limit = int(args.get("limit", 10))
-        out = _stripe_call(lambda: __import__("stripe").Topup.list(limit=limit))
-        mock = _read_mock_topups()[:limit]
-        if mock:
-            if out.get("success") and isinstance(out.get("data"), dict) and "data" in out["data"]:
-                out["data"]["data"] = mock + out["data"]["data"]
-                out["data"]["data"] = out["data"]["data"][:limit]
-            else:
-                out = {"success": True, "data": {"object": "list", "data": mock, "has_more": False}, "mock": True}
-        return out
     if name == "get_balance":
         return _stripe_call(lambda: __import__("stripe").Balance.retrieve())
+    if name == "add_test_balance":
+        return execute_add_test_balance(float(args.get("amount_dollars", 0)))
     return {"success": False, "error": f"Unknown tool: {name}"}

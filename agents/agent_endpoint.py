@@ -6,6 +6,7 @@ Then POST to /prompt with {"message": "Charge me 25 dollars for lunch"} (optiona
 """
 import os
 import sys
+import traceback
 
 if __name__ == "__main__" and __package__ is None:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -33,13 +34,14 @@ def prompt():
     Prompt the agent like in the terminal. Send JSON:
       {"message": "Charge me 25 dollars for lunch", "user_id": "optional"}
     Returns: {"reply": "...", "tool_calls_log": [{"tool_name", "arguments", "result"}, ...]}
+    On agent failure we return 200 with reply/error so the evaluator can score it instead of 500.
     """
+    data = request.get_json() or {}
+    message = (data.get("message") or "").strip()
+    if not message:
+        return jsonify({"error": "message is required"}), 400
+    user_id = (data.get("user_id") or "api_user").strip() or "api_user"
     try:
-        data = request.get_json() or {}
-        message = (data.get("message") or "").strip()
-        if not message:
-            return jsonify({"error": "message is required"}), 400
-        user_id = (data.get("user_id") or "api_user").strip() or "api_user"
         run_payment_agent = _get_agent()
         out = run_payment_agent(user_id=user_id, user_message=message)
         return jsonify({
@@ -47,7 +49,14 @@ def prompt():
             "tool_calls_log": out.get("tool_calls_log", []),
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        # Log full traceback so you can see the cause of 500s in the agent terminal
+        traceback.print_exc()
+        # Return 200 with error in body so backend/evaluator get a consistent response
+        return jsonify({
+            "reply": f"[Agent error] {str(e)}",
+            "tool_calls_log": [],
+            "error": str(e),
+        })
 
 
 if __name__ == "__main__":

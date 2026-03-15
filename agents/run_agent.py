@@ -2,6 +2,7 @@
 """
 Run the payment agent and print the reply + every tool call (for testing
 efficacy, safety, guardrails, and observing when tools are called).
+Requires Python 3.9.4+.
 
 Usage (from repo root):
   python -m agents.run_agent "I want to pay 25 dollars for my burger order"
@@ -10,6 +11,9 @@ Usage (from repo root):
 import json
 import os
 import sys
+
+if sys.version_info < (3, 9, 4):
+    sys.exit("This project requires Python 3.9.4 or newer. Current: %s" % sys.version)
 
 # Support both "python -m agents.run_agent" and "python agents/run_agent.py"
 if __name__ == "__main__" and __package__ is None:

@@ -1,3 +1,4 @@
+# Python 3.9.4+ required (PEP 585 built-in generics: list[...], dict[...]).
 annotated-types==0.7.0
 blinker==1.9.0
 certifi==2026.2.25

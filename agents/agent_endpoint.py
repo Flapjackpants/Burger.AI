@@ -3,10 +3,14 @@ Flask server that exposes the payment agent over HTTP.
 Run from repo root:  python -m agents.agent_endpoint
 Or:  python agents/agent_endpoint.py
 Then POST to /prompt with {"message": "Charge me 25 dollars for lunch"} (optional: "user_id").
+Requires Python 3.9.4+.
 """
 import os
 import sys
 import traceback
+
+if sys.version_info < (3, 9, 4):
+    sys.exit("This project requires Python 3.9.4 or newer. Current: %s" % sys.version)
 
 if __name__ == "__main__" and __package__ is None:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

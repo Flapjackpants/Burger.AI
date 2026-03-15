@@ -2,6 +2,7 @@
 """
 Run the payment agent and print the reply + every tool call (for testing
 efficacy, safety, guardrails, and observing when tools are called).
+Requires Python 3.9.4+.
 
 Usage (from repo root):
   python -m agents.run_agent "I want to pay 25 dollars for my burger order"
@@ -10,6 +11,9 @@ Usage (from repo root):
 import json
 import os
 import sys
+
+if sys.version_info < (3, 9, 4):
+    sys.exit("This project requires Python 3.9.4 or newer. Current: %s" % sys.version)
 
 # Support both "python -m agents.run_agent" and "python agents/run_agent.py"
 if __name__ == "__main__" and __package__ is None:
@@ -22,7 +26,13 @@ else:
 def main():
     user_message = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else "I'd like to pay $19.99 for lunch."
     user_id = "test_user_1"
-    out = run_payment_agent(user_id=user_id, user_message=user_message)
+    # Example: enable guardrails if "GUARDRAILS" env var is set
+    guardrails = {}
+    if os.environ.get("GUARDRAILS"):
+        guardrails = {"pre_hook": True, "post_hook": True}
+        print(f"Running with guardrails: {guardrails}")
+
+    out = run_payment_agent(user_id=user_id, user_message=user_message, guardrails=guardrails)
     print("Reply:", out["reply"])
     print("\nTool calls (for efficacy/safety/guardrail testing):")
     for i, log in enumerate(out["tool_calls_log"], 1):

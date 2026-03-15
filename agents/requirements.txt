@@ -1,3 +1,4 @@
+# Python 3.9.4+ required
 openai>=1.0.0
 python-dotenv>=1.0.0
 stripe>=11.0.0

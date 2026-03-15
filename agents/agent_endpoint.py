@@ -3,10 +3,14 @@ Flask server that exposes the payment agent over HTTP.
 Run from repo root:  python -m agents.agent_endpoint
 Or:  python agents/agent_endpoint.py
 Then POST to /prompt with {"message": "Charge me 25 dollars for lunch"} (optional: "user_id").
+Requires Python 3.9.4+.
 """
 import os
 import sys
 import traceback
+
+if sys.version_info < (3, 9, 4):
+    sys.exit("This project requires Python 3.9.4 or newer. Current: %s" % sys.version)
 
 if __name__ == "__main__" and __package__ is None:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -41,9 +45,10 @@ def prompt():
     if not message:
         return jsonify({"error": "message is required"}), 400
     user_id = (data.get("user_id") or "api_user").strip() or "api_user"
+    guardrails = data.get("guardrails") or {}
     try:
         run_payment_agent = _get_agent()
-        out = run_payment_agent(user_id=user_id, user_message=message)
+        out = run_payment_agent(user_id=user_id, user_message=message, guardrails=guardrails)
         return jsonify({
             "reply": out.get("reply", ""),
             "tool_calls_log": out.get("tool_calls_log", []),

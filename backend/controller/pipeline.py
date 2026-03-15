@@ -1,17 +1,29 @@
 """
 Pipeline: composeData combines RedTeamLLM-generated test cases with generic test data.
 Used by GET /composed-tests and POST /stream to serve combined red-team + generic tests per category.
+Red-team generation runs in parallel across categories; a barrier ensures all finish before merging.
 """
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from serverLLM.redTeamLLM import generate_test_cases, get_categories
 from serverLLM.generic_test_cases import get_generic_tests
+
+
+def _generate_one_category(key, num_cases, llm_config):
+    """Generate red-team cases for a single category. Used by the executor."""
+    print("[Pipeline] generating red-team cases for category: %s" % key)
+    result = generate_test_cases(key, num_cases=num_cases, llm_config=llm_config)
+    cases = result["test_cases"]
+    print("[Pipeline] red-team %s -> %d cases" % (key, len(cases)))
+    return key, cases
 
 
 def composeData(request=None):
     """Combine RedTeamLLM output with generic test data per category.
 
     For each category (Sycophancy Check, Prompt Injection Leak, etc.):
-      - Fetches LLM-generated red-team test cases (objects with prompt, expected_behavior, test_reason).
-      - Fetches generic test cases (fixed list of prompts for that category).
+      - Fetches LLM-generated red-team test cases in parallel (one thread per category).
+      - Barrier: waits until all categories have finished.
+      - Fetches generic test cases (fixed list of prompts per category).
       - Returns one merged list per category: red_team_cases + generic_cases.
 
     Args:
@@ -40,17 +52,27 @@ def composeData(request=None):
     print("[Pipeline] composeData num_cases=%s, llm_config keys=%s" % (num_cases, list(llm_config.keys())))
 
     categories = get_categories()["categories"]
-    print("[Pipeline] get_categories -> %d categories: %s" % (len(categories), categories))
-    red_team_cases = {}
-    for key in categories:
-        print("[Pipeline] generating red-team cases for category: %s" % key)
-        red_team_cases[key] = generate_test_cases(
-            key, num_cases=num_cases, llm_config=llm_config
-        )["test_cases"]
-        print("[Pipeline] red-team %s -> %d cases" % (key, len(red_team_cases[key])))
+    print("[Pipeline] get_categories -> %d categories (parallel generation)" % len(categories))
 
-    print("[Pipeline] get_generic_tests")
-    generic_test_cases = get_generic_tests(None, llm_config)
+    red_team_cases = {}
+    max_workers = min(len(categories) + 1, 8)  # +1 so generic_tests can run alongside
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_generic = executor.submit(get_generic_tests, None, llm_config)
+        futures_red = {
+            executor.submit(_generate_one_category, key, num_cases, llm_config): key
+            for key in categories
+        }
+        for future in as_completed(futures_red):
+            try:
+                key, cases = future.result()
+                red_team_cases[key] = cases
+            except Exception as e:
+                key = futures_red[future]
+                print("[Pipeline] red-team %s failed: %s" % (key, e))
+                red_team_cases[key] = []
+
+        print("[Pipeline] barrier done: all %d categories generated" % len(red_team_cases))
+        generic_test_cases = future_generic.result()
     for k, v in generic_test_cases.items():
         print("[Pipeline] generic %s -> %d cases" % (k, len(v)))
 

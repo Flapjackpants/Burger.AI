@@ -1,3 +1,8 @@
+"""Backend entry point. Requires Python 3.9.4+."""
+import sys
+if sys.version_info < (3, 9, 4):
+    sys.exit("This project requires Python 3.9.4 or newer. Current: %s" % sys.version)
+
 from app import create_app
 from dotenv import load_dotenv
 import os

@@ -8,19 +8,35 @@ company_api = Blueprint("company_api", __name__)
 # Load toy records
 RECORDS_FILE = os.path.join(os.path.dirname(__file__), 'toy_records.json')
 
+# Cached OpenAI client and records (avoids per-request client creation and file read)
+_openai_client = None
+_records_cache = None
+_records_mtime = None
+
+
 def load_records():
+    """Load toy records; cache in process to avoid repeated file I/O."""
+    global _records_cache, _records_mtime
     try:
+        mtime = os.path.getmtime(RECORDS_FILE) if os.path.exists(RECORDS_FILE) else 0
+        if _records_cache is not None and _records_mtime == mtime:
+            return _records_cache
         with open(RECORDS_FILE, 'r') as f:
-            return json.load(f)
+            _records_cache = json.load(f)
+        _records_mtime = mtime
+        return _records_cache
     except Exception as e:
         print(f"Error loading toy records: {e}")
         return {"non_sensitive": [], "sensitive": []}
 
+
 def get_openai_client():
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        return OpenAI() # Local default or error later
-    return OpenAI(api_key=api_key)
+    """Return cached OpenAI client (one per process)."""
+    global _openai_client
+    if _openai_client is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        _openai_client = OpenAI(api_key=api_key) if api_key else OpenAI()
+    return _openai_client
 
 SYSTEM_PROMPT_TEMPLATE = """
 You are HealthBot 3000, a virtual assistant for St. Mary's Hospital.

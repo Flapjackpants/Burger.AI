@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from .tools import TOOLS, run_tool
 from .utils import get_openai_client
+from backend.serverLLM.guardrail_engine import GuardrailEngine
 
 DEFAULT_MODEL = __import__("os").environ.get("PAYMENT_AGENT_MODEL", "gpt-3.5-turbo")
 
@@ -55,13 +56,28 @@ class PaymentAgent:
             self._client = get_openai_client()
         return self._client
 
-    def run(self, user_id: str, user_message: str) -> Dict[str, Any]:
+    def run(self, user_id: str, user_message: str, guardrails: Optional[Any] = None) -> dict[str, Any]:
         """
         Run the agent for one user turn. Returns {
             "reply": str,
             "tool_calls_log": [{"tool_name", "arguments", "result"}, ...]
-        }. The log is also stored on self.tool_calls_log and cleared at the start of each run.
+        }.
+        
+        guardrails: Can be:
+          1. dict (Legacy/Hardcoded): {"pre_hook": bool, "post_hook": bool}
+          2. list (Dynamic/AI-Generated): [{"type": "pre_hook", "condition": "...", ...}]
         """
+        # Prepare Guardrail Engine
+        guardrails_config = {}
+        dynamic_rules = []
+        
+        if isinstance(guardrails, dict):
+            guardrails_config = guardrails
+        elif isinstance(guardrails, list):
+            dynamic_rules = guardrails
+        
+        engine = GuardrailEngine(dynamic_rules)
+
         self.tool_calls_log = []
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -91,7 +107,44 @@ class PaymentAgent:
                     args = _json.loads(tc.function.arguments or "{}")
                 except Exception:
                     args = {}
+
+                # -- 1. Dynamic Pre-Hook Rules via Engine --
+                blocked, block_msg = engine.check_pre_hook(name, args)
+                if blocked:
+                     result = {"error": block_msg}
+                     self.tool_calls_log.append(ToolCallRecord(name, args, result))
+                     messages.append({
+                         "role": "tool",
+                         "tool_call_id": tc.id,
+                         "content": __import__("json").dumps(result),
+                     })
+                     continue
+
+                # -- 2. Hardcoded Pre-Hook (Legacy) --
+                if guardrails_config.get("pre_hook"):
+                    if name == "process_payment" and args.get("amount", 0) > 10000: # >$100.00
+                         result = {"error": "Guardrail Violation: Payment exceeds authorized limit of $100.00. Transaction blocked."}
+                         self.tool_calls_log.append(ToolCallRecord(name, args, result))
+                         messages.append({
+                             "role": "tool",
+                             "tool_call_id": tc.id,
+                             "content": __import__("json").dumps(result),
+                         })
+                         continue
+
                 result = run_tool(name, args)
+                
+                # -- 3. Dynamic Post-Hook Rules via Engine --
+                result = engine.apply_post_hooks(name, args, result)
+
+                # -- 4. Hardcoded Post-Hook (Legacy) --
+                if guardrails_config.get("post_hook"):
+                    if isinstance(result, dict):
+                        if "id" in result:
+                            result["id"] = "<REDACTED_ID>"
+                        if "customer" in result:
+                            result["customer"] = "<REDACTED_PII>"
+
                 self.tool_calls_log.append(ToolCallRecord(name, args, result))
                 messages.append({
                     "role": "tool",
@@ -104,7 +157,7 @@ class PaymentAgent:
         }
 
 
-def run_payment_agent(user_id: str, user_message: str, model: Optional[str] = None) -> Dict[str, Any]:
+def run_payment_agent(user_id: str, user_message: str, model: Union[str, None] = None, guardrails: Union[dict[str, Any], None] = None) -> dict[str, Any]:
     """One-shot: run the payment agent and return reply + tool_calls_log."""
     agent = PaymentAgent(model=model)
-    return agent.run(user_id=user_id, user_message=user_message)
+    return agent.run(user_id=user_id, user_message=user_message, guardrails=guardrails)

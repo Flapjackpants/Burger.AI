@@ -7,16 +7,27 @@ from serverLLM.guardrailLLM import generate_guardrails as generate_guardrails_ll
 
 api = Blueprint("api", __name__)
 
-# Default agent URL when llm_link is not provided (agent /prompt endpoint)
-DEFAULT_LLM_LINK = "http://127.0.0.1:5002"
+# Default full URL to the OpenAI agent when llm_link is not provided
+DEFAULT_LLM_LINK = "http://127.0.0.1:5002/prompt"
+
+
+def _agent_url(llm_link):
+    """Return full POST URL. Use llm_link as-is if it already has a path (/prompt, /claude, etc.); else append /prompt."""
+    raw = (llm_link or "").strip().rstrip("/")
+    if not raw:
+        return DEFAULT_LLM_LINK
+    # Bare base (e.g. http://127.0.0.1:5002) has no path segment after host:port
+    parts = raw.split("/")
+    if len(parts) <= 3 and raw.startswith("http"):  # http: , "" , host:port
+        return raw + "/prompt"
+    return raw
 
 
 def _get_wrapper(llm_config, guardrails=None):
-    """Return a callable(prompt) -> { reply, tool_calls_log } that POSTs to llm_link/prompt.
-    If guardrails is provided (list or dict), include it in each agent request for retesting."""
-    base = (llm_config or {}).get("llm_link") or DEFAULT_LLM_LINK
-    base = base.rstrip("/")
-    url = base + "/prompt" if not base.endswith("/prompt") else base
+    """Return a callable(prompt) -> { reply, tool_calls_log } that POSTs to the agent URL.
+    llm_link is the full URL (e.g. .../prompt or .../claude). Guardrails included when provided."""
+    link = (llm_config or {}).get("llm_link")
+    url = _agent_url(link)
     print("[Routes] _get_wrapper: agent URL=%s, guardrails=%s" % (url, "yes" if guardrails else "no"))
 
     def wrapper(prompt):

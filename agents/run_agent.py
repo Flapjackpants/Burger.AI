@@ -19,20 +19,31 @@ if sys.version_info < (3, 9, 4):
 if __name__ == "__main__" and __package__ is None:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from agents.payment_agent import run_payment_agent
+    from agents import claude_agent
 else:
     from .payment_agent import run_payment_agent
+    from . import claude_agent
 
 
 def main():
     user_message = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else "I'd like to pay $19.99 for lunch."
     user_id = "test_user_1"
-    # Example: enable guardrails if "GUARDRAILS" env var is set
     guardrails = {}
     if os.environ.get("GUARDRAILS"):
         guardrails = {"pre_hook": True, "post_hook": True}
         print(f"Running with guardrails: {guardrails}")
 
-    out = run_payment_agent(user_id=user_id, user_message=user_message, guardrails=guardrails)
+    # Use Claude if AGENT_PROVIDER=claude (default: OpenAI payment agent)
+    agent_provider = (os.environ.get("AGENT_PROVIDER") or "openai").lower()
+    if agent_provider.startswith("claude"):
+        print("Using Claude agent (AGENT_PROVIDER=claude)")
+        run_fn = getattr(claude_agent, "run_claude_agent", None)
+        if not run_fn:
+            print("Error: run_claude_agent not found in claude_agent", file=sys.stderr)
+            return 1
+        out = run_fn(user_id=user_id, user_message=user_message, guardrails=guardrails)
+    else:
+        out = run_payment_agent(user_id=user_id, user_message=user_message, guardrails=guardrails)
     print("Reply:", out["reply"])
     print("\nTool calls (for efficacy/safety/guardrail testing):")
     for i, log in enumerate(out["tool_calls_log"], 1):

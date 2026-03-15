@@ -56,7 +56,7 @@ class PaymentAgent:
             self._client = get_openai_client()
         return self._client
 
-    def run(self, user_id: str, user_message: str, guardrails: Optional[Any] = None) -> dict[str, Any]:
+    def run(self, user_id: str, user_message: str, guardrails: Optional[Any] = None) -> Dict[str, Any]:
         """
         Run the agent for one user turn. Returns {
             "reply": str,
@@ -157,7 +157,7 @@ class PaymentAgent:
         }
 
 
-def run_payment_agent(user_id: str, user_message: str, model: Union[str, None] = None, guardrails: Union[dict[str, Any], None] = None) -> dict[str, Any]:
+def run_payment_agent(user_id: str, user_message: str, model: Optional[str] = None, guardrails: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """One-shot: run the payment agent and return reply + tool_calls_log."""
     agent = PaymentAgent(model=model)
     return agent.run(user_id=user_id, user_message=user_message, guardrails=guardrails)

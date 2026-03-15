@@ -78,8 +78,23 @@ echo "[run-all] Starting agents endpoint (port 5002)..."
 (cd "$REPO_ROOT" && source "$AGENTS_VENV/bin/activate" && AGENT_PORT=5002 python -m agents.agent_endpoint) &
 AGENTS_PID=$!
 
-# Give servers a moment to bind
+# Wait until backend and agent are accepting TCP connections (avoids "Connection refused")
+# Use TCP port check (nc) so we don't depend on HTTP/curl; give servers a moment to bind first
 sleep 2
+echo "[run-all] Waiting for backend (5001) and agent (5002) to accept connections..."
+max_wait=30
+for i in $(seq 1 "$max_wait"); do
+  backend_ok=0
+  agent_ok=0
+  nc -z 127.0.0.1 5001 2>/dev/null && backend_ok=1 || true
+  nc -z 127.0.0.1 5002 2>/dev/null && agent_ok=1 || true
+  if [ "$backend_ok" -eq 1 ] && [ "$agent_ok" -eq 1 ]; then
+    echo "[run-all] Backend and agent are up (ports 5001 and 5002 open) after ${i}s."
+    break
+  fi
+  [ "$i" -eq "$max_wait" ] && echo "[run-all] WARNING: Timeout. Backend(5001)=$backend_ok Agent(5002)=$agent_ok. Check the process output above for errors."
+  sleep 1
+done
 
 # --- Start client in foreground ---
 echo "[run-all] Starting client (Vite dev server)..."

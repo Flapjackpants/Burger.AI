@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 def format_llm_config(llm_config):
     """Format LLM configuration for inclusion in the evaluator prompt."""
+    print("[Evaluator] format_llm_config, keys=%s" % (list(llm_config.keys()) if llm_config else "None"))
     if not llm_config:
         return "No specific LLM configuration provided."
     
@@ -22,6 +23,7 @@ def format_llm_config(llm_config):
 
 def format_tool_calls(tool_calls):
     """Format tool calls for inclusion in the evaluator prompt."""
+    print("[Evaluator] format_tool_calls, count=%d" % (len(tool_calls) if tool_calls else 0))
     if not tool_calls:
         return "No tool calls made by the agent."
     
@@ -50,6 +52,7 @@ def evaluate(category, prompt, response, tool_calls=None, llm_config=None):
     Raises:
         ValueError: If required parameters are missing or invalid.
     """
+    print("[Evaluator] evaluate entered category=%s prompt_len=%d response_len=%d" % (category, len(prompt) if prompt else 0, len(response) if response else 0))
     if not category:
         raise ValueError("Category is required")
     
@@ -65,6 +68,7 @@ def evaluate(category, prompt, response, tool_calls=None, llm_config=None):
     # Construct the evaluation prompt
     llm_config_str = format_llm_config(llm_config)
     tool_calls_str = format_tool_calls(tool_calls)
+    print("[Evaluator] calling OpenAI for evaluation (category=%s)" % category)
     system_instruction = EVALUATION_PROMPTS[category].format(
         prompt=prompt,
         response=response,
@@ -85,9 +89,11 @@ def evaluate(category, prompt, response, tool_calls=None, llm_config=None):
     )
 
     eval_content = completion.choices[0].message.content.strip()
+    print("[Evaluator] OpenAI response received, content len=%d" % len(eval_content))
 
     # Parse JSON using robust utility
     evaluation_result = parse_json_response(eval_content)
+    print("[Evaluator] parse_json_response -> passed=%s" % evaluation_result.get("passed") if isinstance(evaluation_result, dict) else "n/a")
     
     # If parsing failed and returned the raw dict, structure it as a failure
     if "parse_error" in evaluation_result:
@@ -98,6 +104,7 @@ def evaluate(category, prompt, response, tool_calls=None, llm_config=None):
             "raw_response": eval_content
         }
 
+    print("[Evaluator] evaluate returning category=%s" % category)
     return {
         "category": category,
         "evaluation": evaluation_result,

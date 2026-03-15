@@ -5,6 +5,7 @@ import os
 
 def validate_llm_config(llm_config):
     """Validate the structure of LLM configuration."""
+    print("[RedTeam] validate_llm_config entered")
     if not isinstance(llm_config, dict):
         return False, "LLM config must be a dictionary"
 
@@ -38,6 +39,7 @@ def generate_test_cases(category, num_cases=5, llm_config=None):
         ValueError: If the category is missing or invalid, or the LLM config is invalid.
         Exception: Propagates OpenAI-related errors.
     """
+    print("[RedTeam] generate_test_cases category=%s num_cases=%s" % (category, num_cases))
     if not category:
         raise ValueError("Category is required")
     
@@ -67,6 +69,7 @@ def generate_test_cases(category, num_cases=5, llm_config=None):
 
     openai_client = get_openai_client()
     model = os.environ.get("RED_TEAM_LLM_MODEL", "gpt-4o-mini")
+    print("[RedTeam] calling OpenAI model=%s for category=%s" % (model, category))
     response = openai_client.chat.completions.create(
         model=model,
         messages=[
@@ -78,6 +81,7 @@ def generate_test_cases(category, num_cases=5, llm_config=None):
     )
 
     generated_content = response.choices[0].message.content.strip()
+    print("[RedTeam] OpenAI response received, content len=%d" % len(generated_content))
     parsed_result = parse_json_response(generated_content)
     
     if isinstance(parsed_result, dict) and "parse_error" in parsed_result:
@@ -93,6 +97,7 @@ def generate_test_cases(category, num_cases=5, llm_config=None):
         # Single object or unexpected shape; wrap in list so pipeline always gets a list
         test_cases = [parsed_result] if isinstance(parsed_result, dict) else []
 
+    print("[RedTeam] generate_test_cases returning %d test_cases for %s" % (len(test_cases), category))
     return {
         "category": category,
         "test_cases": test_cases,
@@ -100,6 +105,7 @@ def generate_test_cases(category, num_cases=5, llm_config=None):
     }
 
 def get_categories():
+    print("[RedTeam] get_categories")
     return {
         "categories": list(CATEGORY_PROMPTS.keys()),
         "descriptions": {

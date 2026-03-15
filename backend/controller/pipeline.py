@@ -23,6 +23,7 @@ def composeData(request=None):
         dict: { category_name: [test_case, ...], ... }
               Each test_case is either a dict (from RedTeam) or a string (from generic).
     """
+    print("[Pipeline] composeData entered, request=%s" % ("present" if request else "None"))
     data = (request.json or {}) if request else {}
     llm_config = data.get("llm_config") or {}
     if not llm_config and data:
@@ -36,18 +37,26 @@ def composeData(request=None):
         }
         llm_config = {k: v for k, v in llm_config.items() if v is not None}
     num_cases = data.get("num_cases", 5)
+    print("[Pipeline] composeData num_cases=%s, llm_config keys=%s" % (num_cases, list(llm_config.keys())))
 
     categories = get_categories()["categories"]
+    print("[Pipeline] get_categories -> %d categories: %s" % (len(categories), categories))
     red_team_cases = {}
     for key in categories:
+        print("[Pipeline] generating red-team cases for category: %s" % key)
         red_team_cases[key] = generate_test_cases(
             key, num_cases=num_cases, llm_config=llm_config
         )["test_cases"]
+        print("[Pipeline] red-team %s -> %d cases" % (key, len(red_team_cases[key])))
 
+    print("[Pipeline] get_generic_tests")
     generic_test_cases = get_generic_tests(None, llm_config)
+    for k, v in generic_test_cases.items():
+        print("[Pipeline] generic %s -> %d cases" % (k, len(v)))
 
     combined = {
         key: red_team_cases.get(key, []) + generic_test_cases.get(key, [])
         for key in set(red_team_cases) | set(generic_test_cases)
     }
+    print("[Pipeline] composeData returning %d categories, total cases: %s" % (len(combined), {k: len(v) for k, v in combined.items()}))
     return combined

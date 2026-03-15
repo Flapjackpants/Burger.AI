@@ -55,7 +55,10 @@ def get_generic_tests(category, llm_config=None):
     Returns:
         dict: Payload matching the Flask jsonify structure used by redTeamLLM.
     """
-    return GENERIC_TEST_CASES
+    print("[Generic] get_generic_tests category=%s" % category)
+    out = GENERIC_TEST_CASES
+    print("[Generic] get_generic_tests returning %d categories" % len(out))
+    return out
 
 
 if __name__ == "__main__":

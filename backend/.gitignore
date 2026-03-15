@@ -49,3 +49,4 @@ build/
 # Jupyter notebooks
 
 .ipynb_checkpoints
+backend_venv

@@ -45,6 +45,14 @@ This creates a PaymentIntent and confirms it with a test card so the amount appe
 
 **Add balance (Connect only):** `python -m agents.seed_balance 100` — uses Stripe Top-up (Connect platforms only). Otherwise use `add_real_test_balance` above.
 
+**Agent as a Flask server (agent_endpoint):**
+```bash
+python -m agents.agent_endpoint
+```
+Runs a Flask server on port 5002 (or set `AGENT_PORT`). Exposes:
+- **GET /health** — `{"status": "ok"}`
+- **POST /prompt** — body `{"message": "Charge me 25 dollars for lunch", "user_id": "optional"}` → returns `{"reply": "...", "tool_calls_log": [...]}` (same as terminal run_agent).
+
 **See if money is on the account:**
 - **Terminal:** `python -m agents.check_balance` — prints available and pending balance.
 - **Agent:** Ask *"What's my balance?"* or *"Do I have any money?"* — the agent calls get_balance.

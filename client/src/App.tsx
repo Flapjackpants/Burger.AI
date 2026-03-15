@@ -7,7 +7,7 @@ const config: LLMConfig = {
   description: "A test chatbot",
   system_prompts: [],
   disallowed_topics: [],
-  llm_link: "https://your-llm-endpoint.com",
+  llm_link: "http://127.0.0.1:5002",
 };
 
 function App() {

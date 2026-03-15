@@ -1,19 +1,19 @@
-from openai import AsyncOpenAI
+from openai import OpenAI
 import os
 import json
 
-# OpenAI client will be initialized when needed
+# Sync client: redTeamLLM uses .create() without await
 client = None
 
 def get_openai_client():
     global client
+    print("[Utils] get_openai_client")
     if client is None:
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
-            # Fallback for local testing if env var not set, though it should be
-            print("Warning: OPENAI_API_KEY not found in environment variables.")
-            return AsyncOpenAI() # This will look for env var by default
-        client = AsyncOpenAI(api_key=api_key)
+            print("[Utils] Warning: OPENAI_API_KEY not found in environment variables.")
+        client = OpenAI(api_key=api_key) if api_key else OpenAI()
+        print("[Utils] OpenAI client created (cached)")
     return client
 
 def parse_json_response(content):
@@ -21,6 +21,7 @@ def parse_json_response(content):
     Robustly parse JSON from an LLM response string.
     Handles Markdown code blocks, surrounding whitespace, and potential raw objects.
     """
+    print("[Utils] parse_json_response content_len=%d" % (len(content) if content else 0))
     try:
         content = content.strip()
         # Remove Markdown Code Blocks
@@ -63,9 +64,12 @@ def parse_json_response(content):
                  end_idx = last_bracket + 1
         
         cleaned_content = content[start_idx:end_idx]
-        return json.loads(cleaned_content)
+        out = json.loads(cleaned_content)
+        print("[Utils] parse_json_response OK (type=%s)" % type(out).__name__)
+        return out
         
     except json.JSONDecodeError as e:
         # If parsing fails, return None or raise so the caller knows
         # For this app, return a dict indicating failure so we don't crash and can debug
+        print("[Utils] parse_json_response JSONDecodeError: %s" % e)
         return {"parse_error": str(e), "raw_content": content}

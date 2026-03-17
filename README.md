@@ -126,7 +126,7 @@ This project was built for the **2026 Cornell AI Hackathon** and was selected as
 
 * **Daniel Lee** (linkedin.com/in/daniel-lee-55688730a)
 * **Maxwell Li** (linkedin.com/in/maxwell-kaiyang-li/)
-* **Jimmy Mulosmani** (linkedin.com/in/trashgim-jimmy-mulosmani-035767245)
+* **Anderson Peng** (ap2524@cornell.edu)
 * **Andrew Zhang** (linkedin.com/in/andrew-zhang-b7b867390/)
 
 **Special Thanks:**

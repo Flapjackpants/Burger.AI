@@ -1,23 +1,23 @@
-# Burger.AI 🍔🤖
+# Burger.AI
 
-**2026 Cornell AI Hackathon Finalist** 🏆
+**2026 Cornell AI Hackathon Finalist**
 
 Burger.AI is an automated Red Teaming platform designed to stress-test, evaluate, and secure financial AI agents. It acts as an adversarial "Red Team" that attacks your agent with sophisticated prompts, evaluates the responses for safety failures, and autonomously generates guardrails to patch vulnerabilities in real-time.
 
-## 🎯 Motivation
+## Motivation
 
 Currently, the tools available for making AI guardrails are heavily focused on pre-filter and post-filter text moderation, which is a severely neglected space when it comes to *agentic* AIs. 
 
 There is a massive "Intent-Action Gap" where malicious or unintended actions can easily masquerade as routine tool calls, bypassing standard safety controls without requiring "toxic" text. When real money and lives are on the line—whether in finance, healthcare, or military applications—relying on pure text filters is insufficient. 
 
-## ✨ Key Features & Solution
+## Key Features & Solution
 
 To address this, Burger.AI introduces an "Execution Governor" that intercepts the agent's actions, rather than just its words. 
 
 * **Pre-Tool Hook**: This feature validates the JSON payload against dynamic policies before execution to block dangerous logic.
 * **Post-Tool Hook**: This feature sanitizes the tool output before the agent sees it, redacts PII (like passwords and SSNs), and prevents tool-output-based prompt injections that lead to context drift.
 
-## 💻 UI Usage & Dashboard
+## UI Usage & Dashboard
 
 The Burger.AI platform features a multi-faceted dashboard to track agentic safety. 
 
@@ -31,11 +31,10 @@ It allows users to monitor in-depth testing based on OWASP standards, visualizin
 * Hallucination
 * Jailbreak
 
-## 📉 Evaluation Results & Failure Reduction
+## Evaluation Results & Failure Reduction
 
-In standard benchmarks, industry models failed consistently when attacked with non-toxic, logic-based exploits. Burger.AI significantly reduces these failures by filtering for logic rather than feelings:
+In standard benchmarks, industry models failed consistently when attacked with non-toxic, logic-based exploits. Burger.AI significantly reduces these failures by filtering for logic rather than feelings. Below are the evaluations of Sonnet 4.6 before and after adding generated guardrails:
 
-Specific Sonnet 4.6 results before and after adding generated guardrail:
 ![Testing Results & Failure Reduction Graph](images/anthropic_pre.png)
 ![Testing Results & Failure Reduction Graph](images/anthropic_post.png)
 
@@ -45,7 +44,7 @@ Specific Sonnet 4.6 results before and after adding generated guardrail:
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 The easiest way to run the entire stack (Backend, Agents, and Client dashboard) is:
 
@@ -60,7 +59,7 @@ This script will:
 
 ---
 
-## 🛠️ Configuration (Required)
+## Configuration (Required)
 
 To use the system, you must provide your own API keys. We have provided template files for you to copy.
 
@@ -97,7 +96,7 @@ The frontend dashboard.
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 The project consists of three main components:
 
@@ -113,13 +112,13 @@ The project consists of three main components:
 3.  **Client (`/client`)**:
     * A React + Vite dashboard to visualize the attacks, safety scores, and generated guardrails.
 
-## ⚠️ Note on Costs
+## Note on Costs
 
 This project uses LLMs for generating attacks and evaluating responses. **You must provide your own API keys.**
 - The system is designed to use `gpt-4o-mini` by default to minimize costs.
 - Heavy red-teaming sessions will consume tokens from your OpenAI/Anthropic accounts.
 
-## 🤝 Credits & Acknowledgements 
+## Credits & Acknowledgements 
 
 This project was built for the **2026 Cornell AI Hackathon** and was selected as a finalist.
 
